@@ -6,14 +6,12 @@ import java.util.List;
 import java.util.Optional;
 
 public interface PostulationRepository extends JpaRepository<Postulation, Integer> {
+    // Ver si este proveedor ya se postuló a esta petición (para evitar duplicados)
+    Optional<Postulation> findByPetition_IdPetitionAndProvider_IdProvider(Integer idPetition, Integer idProvider);
 
-    // 1. Ver todas las postulaciones para una Petición específica (Para que el
-    // cliente elija)
+    // Listar todas las postulaciones de una petición (Para que el cliente elija)
     List<Postulation> findByPetition_IdPetition(Integer idPetition);
 
-    // 2. Ver las postulaciones que ha hecho un Proveedor (Historial del proveedor)
+    // Ver historial de postulaciones de un proveedor
     List<Postulation> findByProvider_IdProvider(Integer idProvider);
-
-    // 3. Verificar si un proveedor YA se postuló a una petición (Evitar duplicados)
-    Optional<Postulation> findByPetition_IdPetitionAndProvider_IdProvider(Integer idPetition, Integer idProvider);
 }
