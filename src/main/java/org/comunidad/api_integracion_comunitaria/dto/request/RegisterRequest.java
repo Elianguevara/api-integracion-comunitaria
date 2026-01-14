@@ -1,4 +1,4 @@
-package org.comunidad.api_integracion_comunitaria.dto.request;
+package org.comunidad.api_integracion_comunitaria.dto.request; // Asegúrate de que el paquete sea correcto
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,4 +14,7 @@ public class RegisterRequest {
     private String lastname;
     private String email;
     private String password;
+
+    // Valores esperados: "PROVIDER" o "CUSTOMER"
+    private String role;
 }
