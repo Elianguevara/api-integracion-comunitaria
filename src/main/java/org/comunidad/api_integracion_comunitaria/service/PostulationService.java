@@ -21,6 +21,8 @@ public class PostulationService {
     private final PetitionRepository petitionRepository;
     private final ProviderRepository providerRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
+    private final PetitionStateRepository petitionStateRepository;
 
     // CORRECCIÓN: Usamos el repositorio correcto para PostulationState
     private final PostulationStateRepository postulationStateRepository;
@@ -84,10 +86,6 @@ public class PostulationService {
                 .isWinner(p.getWinner())
                 .build();
     }
-    // ... imports y código anterior ...
-
-    // Necesitamos inyectar el repositorio de estados de Petición también
-    private final PetitionStateRepository petitionStateRepository;
 
     @Transactional
     public void acceptPostulation(Integer idPostulation) {
@@ -120,6 +118,14 @@ public class PostulationService {
         postulation.setState(acceptedState);
         postulation.setWinner(true);
         postulationRepository.save(postulation);
+        // --- NOTIFICACIÓN AL GANADOR ---
+        notificationService.sendNotification(
+                postulation.getProvider().getUser(), // Usuario destinatario
+                "¡Felicidades! Tu propuesta fue aceptada",
+                "El cliente " + clientUser.getName() + " ha aceptado tu propuesta para: " + petition.getDescription(),
+                "SUCCESS",
+                petition,
+                postulation);
 
         // B. Cambiar estado de la Petición a ADJUDICADA
         PetitionState adjudicadaState = petitionStateRepository.findByName("ADJUDICADA")
@@ -137,6 +143,14 @@ public class PostulationService {
             if (!p.getIdPostulation().equals(idPostulation)) { // Si no es la ganadora
                 p.setState(rejectedState);
                 postulationRepository.save(p);
+                // --- NOTIFICACIÓN A LOS RECHAZADOS ---
+                notificationService.sendNotification(
+                        p.getProvider().getUser(),
+                        "Postulación finalizada",
+                        "Otra propuesta fue seleccionada para la petición: " + petition.getDescription(),
+                        "INFO",
+                        petition,
+                        p);
             }
         }
     }

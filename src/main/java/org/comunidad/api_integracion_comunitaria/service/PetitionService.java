@@ -27,6 +27,7 @@ public class PetitionService {
     private final ProfessionRepository professionRepository;
     private final TypePetitionRepository typePetitionRepository;
     private final PetitionStateRepository petitionStateRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public PetitionResponse createPetition(PetitionRequest request) {
@@ -64,7 +65,19 @@ public class PetitionService {
 
         Petition savedPetition = petitionRepository.save(petition);
 
+        // --- NUEVO: Notificar a los proveedores ---
+        // Lo hacemos en un try-catch para que si falla la notificación,
+        // NO falle la creación de la petición (la notificación es secundaria)
+        try {
+            notificationService.notifyProvidersByProfession(
+                    savedPetition.getProfession().getIdProfession(),
+                    savedPetition);
+        } catch (Exception e) {
+            System.err.println("Error enviando notificaciones: " + e.getMessage());
+        }
+
         return mapToResponse(savedPetition);
+
     }
 
     public List<PetitionResponse> getAllPublishedPetitions() {
