@@ -3,6 +3,7 @@ package org.comunidad.api_integracion_comunitaria.model;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.ToString;
+import java.util.List; // Importante para las listas
 
 @Data
 @Entity
@@ -31,7 +32,7 @@ public class Provider {
     @ToString.Exclude
     private Profession profession;
 
-    // Relación con la Dirección (Si se borra el proveedor, se borra su dirección)
+    // Relación con la Dirección
     @OneToOne(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JoinColumn(name = "address_id")
     @ToString.Exclude
@@ -39,4 +40,16 @@ public class Provider {
 
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    // --- AGREGADO: Relaciones Inversas para las Queries del Repository ---
+
+    // 1. Relación con Categorías (para 'p.providerCategories')
+    @OneToMany(mappedBy = "provider", fetch = FetchType.LAZY)
+    @ToString.Exclude
+    private List<ProviderCategory> providerCategories;
+
+    // 2. Relación con Ciudades (para 'p.providerCities')
+    @OneToMany(mappedBy = "provider", fetch = FetchType.LAZY)
+    @ToString.Exclude
+    private List<ProviderCity> providerCities;
 }
