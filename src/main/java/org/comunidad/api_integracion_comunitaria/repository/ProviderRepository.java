@@ -30,4 +30,13 @@ public interface ProviderRepository extends JpaRepository<Provider, Integer> {
     // provincia)
     @Query("SELECT p FROM Provider p JOIN p.providerCities pc WHERE pc.city.idCity = :idCity")
     List<Provider> findByCityId(@Param("idCity") Integer idCity);
+
+    // 4. Búsqueda combinada: Profesión + Zona (Esta es la que usará el sistema de
+    // notificaciones)
+    @Query("SELECT p FROM Provider p " +
+            "JOIN p.providerCities pc " +
+            "WHERE p.profession.idProfession = :idProfession " +
+            "AND pc.city.idCity = :idCity")
+    List<Provider> findByProfessionAndCity(@Param("idProfession") Integer idProfession,
+            @Param("idCity") Integer idCity);
 }

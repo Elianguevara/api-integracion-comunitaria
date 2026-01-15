@@ -2,15 +2,15 @@ package org.comunidad.api_integracion_comunitaria.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
-import lombok.EqualsAndHashCode; // Importante para herencia
+import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import java.time.LocalDate;
 
 @Data
-@EqualsAndHashCode(callSuper = true) // Incluye los campos del padre en equals/hashCode
+@EqualsAndHashCode(callSuper = true)
 @Entity
 @Table(name = "n_petition")
-public class Petition extends AuditableEntity { // <--- HERENCIA APLICADA
+public class Petition extends AuditableEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -26,6 +26,14 @@ public class Petition extends AuditableEntity { // <--- HERENCIA APLICADA
     @JoinColumn(name = "id_customer")
     @ToString.Exclude
     private Customer customer;
+
+    // --- NUEVO CAMPO: CIUDAD ---
+    // Fundamental para el filtro de notificaciones por zona
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_city")
+    @ToString.Exclude
+    private City city;
+    // ---------------------------
 
     @Column(columnDefinition = "TEXT")
     private String description;
@@ -51,9 +59,6 @@ public class Petition extends AuditableEntity { // <--- HERENCIA APLICADA
     @Column(name = "date_until")
     private LocalDate dateUntil;
 
-    // NOTA: Borré dateCreate, dateUpdate, userCreate, userUpdate porque ya se
-    // heredan.
-
     @Column(name = "is_deleted")
-    private Boolean isDeleted; // Este lo dejamos aquí porque no todas las entidades lo tienen
+    private Boolean isDeleted;
 }

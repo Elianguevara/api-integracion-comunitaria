@@ -66,10 +66,14 @@ public class NotificationService {
         notificationRepository.save(notification);
     }
 
+    /**
+     * CORRECCIÓN PRINCIPAL:
+     * Este método ahora busca proveedores filtrando por Profesión Y Ciudad.
+     */
     @Transactional
-    public void notifyProvidersByProfession(Integer idProfession, Petition petition) {
-        // 1. Buscamos a los interesados
-        List<Provider> providers = providerRepository.findByProfession_IdProfession(idProfession);
+    public void notifyProvidersByProfessionAndCity(Integer idProfession, Integer idCity, Petition petition) {
+        // 1. Buscamos a los interesados usando la query optimizada (Punto 2 del plan)
+        List<Provider> providers = providerRepository.findByProfessionAndCity(idProfession, idCity);
 
         // 2. Filtramos al propio dueño (por si un plomero pide un plomero y se
         // auto-notifica)
@@ -77,12 +81,18 @@ public class NotificationService {
 
         // 3. Enviamos masivamente
         for (Provider provider : providers) {
+            // Verificamos que no sea el mismo usuario que creó la petición
             if (!provider.getUser().getIdUser().equals(ownerId)) {
+
+                // Construimos un mensaje más personalizado
+                String professionName = petition.getProfession().getName();
+                String cityName = petition.getCity() != null ? petition.getCity().getName() : "tu zona";
+
                 sendNotification(
                         provider.getUser(),
-                        "¡Nuevo trabajo disponible!",
-                        "Se ha publicado una petición que coincide con tu profesión: " + petition.getDescription(),
-                        "OPPORTUNITY", // Tipo nuevo para distinguir
+                        "¡Oportunidad en " + cityName + "!",
+                        "Se busca " + professionName + " para: " + petition.getDescription(),
+                        "OPPORTUNITY",
                         petition,
                         null);
             }
