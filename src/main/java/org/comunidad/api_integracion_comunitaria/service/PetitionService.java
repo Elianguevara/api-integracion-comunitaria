@@ -132,28 +132,45 @@ public class PetitionService {
         }
 
         /**
-         * Convierte una entidad Petition a su DTO de respuesta.
+         * Convierte una entidad {@link Petition} del modelo de dominio a un DTO
+         * {@link PetitionResponse}.
+         * <p>
+         * Este método se encarga de aplanar la estructura de objetos para que el
+         * Frontend
+         * reciba cadenas de texto simples (nombres) en lugar de objetos anidados
+         * complejos.
+         * </p>
          *
-         * @param petition Entidad a convertir.
-         * @return PetitionResponse DTO listo para el frontend.
+         * @param petition La entidad persistente recuperada de la base de datos.
+         * @return Un objeto de respuesta optimizado para la vista del
+         *         cliente/proveedor.
          */
         private PetitionResponse mapToResponse(Petition petition) {
-                // Obtenemos nombre de ciudad de forma segura (null-safe)
-                String cityName = petition.getCity() != null ? petition.getCity().getName() : "Sin especificar";
+                // Manejo seguro de nulos: Si por error la ciudad no se guardó, mostramos un
+                // texto por defecto
+                // para evitar que la aplicación móvil se cierre inesperadamente
+                // (NullPointerException).
+                String cityName = (petition.getCity() != null)
+                                ? petition.getCity().getName()
+                                : "Ubicación no especificada";
 
                 return PetitionResponse.builder()
                                 .idPetition(petition.getIdPetition())
                                 .description(petition.getDescription())
-                                .typePetitionName(petition.getTypePetition().getTypePetitionName())
-                                .professionName(petition.getProfession().getName())
-                                .stateName(petition.getState().getName())
+                                // Usamos operadores ternarios para proteger contra nulos en relaciones clave
+                                .typePetitionName(petition.getTypePetition() != null
+                                                ? petition.getTypePetition().getTypePetitionName()
+                                                : "Sin categoría")
+                                .professionName(petition.getProfession() != null ? petition.getProfession().getName()
+                                                : "Profesión no especificada")
+                                .stateName(petition.getState() != null ? petition.getState().getName()
+                                                : "ESTADO_DESCONOCIDO")
                                 .dateSince(petition.getDateSince())
                                 .dateUntil(petition.getDateUntil())
-                                // Concatenamos nombre completo del cliente
                                 .customerName(petition.getCustomer().getUser().getName() + " "
                                                 + petition.getCustomer().getUser().getLastname())
-                                // .cityName(cityName) // <-- Si agregas el campo 'cityName' a PetitionResponse,
-                                // descomenta esto.
+                                // --- ASIGNACIÓN DEL CAMPO NUEVO ---
+                                .cityName(cityName)
                                 .build();
         }
 }
