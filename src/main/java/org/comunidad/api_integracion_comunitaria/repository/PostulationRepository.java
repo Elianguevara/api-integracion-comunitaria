@@ -14,4 +14,8 @@ public interface PostulationRepository extends JpaRepository<Postulation, Intege
 
     // Ver historial de postulaciones de un proveedor
     List<Postulation> findByProvider_IdProvider(Integer idProvider);
+
+    // En PostulationRepository.java
+    boolean existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(Integer idCustomer,
+            Integer idProvider);
 }
