@@ -5,14 +5,14 @@ import org.comunidad.api_integracion_comunitaria.dto.request.PostulationRequest;
 import org.comunidad.api_integracion_comunitaria.dto.response.PostulationResponse;
 import org.comunidad.api_integracion_comunitaria.model.*;
 import org.comunidad.api_integracion_comunitaria.repository.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Servicio encargado de gestionar las postulaciones de los proveedores a las
@@ -34,7 +34,6 @@ public class PostulationService {
 
         /**
          * Permite a un proveedor postularse a una petición existente.
-         * Aplica validaciones estrictas de estado, fecha y propiedad.
          */
         @Transactional
         public PostulationResponse createPostulation(PostulationRequest request) {
@@ -52,7 +51,7 @@ public class PostulationService {
                 Petition petition = petitionRepository.findById(request.getIdPetition())
                                 .orElseThrow(() -> new RuntimeException("La petición solicitada no existe."));
 
-                // --- VALIDACIONES DE NEGOCIO (PUNTO 3) ---
+                // --- VALIDACIONES DE NEGOCIO ---
 
                 // A. Validar que la petición esté ABIERTA
                 if (!"PUBLICADA".equalsIgnoreCase(petition.getState().getName())) {
@@ -67,18 +66,14 @@ public class PostulationService {
                                         + petition.getDateUntil() + ").");
                 }
 
-                // C. Validar Anti-Auto-Postulación (El dueño no puede ser el proveedor)
+                // C. Validar Anti-Auto-Postulación
                 if (petition.getCustomer().getUser().getIdUser().equals(user.getIdUser())) {
                         throw new RuntimeException("No puedes postularte a tu propia petición.");
                 }
 
-                // ------------------------------------------
-
-                // 4. Validar duplicados: ¿Ya se postuló antes?
-                if (postulationRepository
-                                .findByPetition_IdPetitionAndProvider_IdProvider(petition.getIdPetition(),
-                                                provider.getIdProvider())
-                                .isPresent()) {
+                // 4. Validar duplicados
+                if (postulationRepository.findByPetition_IdPetitionAndProvider_IdProvider(petition.getIdPetition(),
+                                provider.getIdProvider()).isPresent()) {
                         throw new RuntimeException("Ya tienes una postulación activa para esta petición.");
                 }
 
@@ -90,7 +85,6 @@ public class PostulationService {
                 postulation.setWinner(false);
                 postulation.setIsDeleted(false);
 
-                // Estado inicial: "ENVIADA"
                 PostulationState initialState = postulationStateRepository.findByName("ENVIADA")
                                 .orElseThrow(() -> new RuntimeException(
                                                 "Error de configuración: Estado 'ENVIADA' no existe en BD."));
@@ -98,18 +92,108 @@ public class PostulationService {
 
                 postulationRepository.save(postulation);
 
-                // Opcional: Podríamos notificar al Cliente aquí ("¡Tienes un nuevo candidato!")
+                // Opcional: Notificar al Cliente
                 // notificationService.sendNotification(petition.getCustomer().getUser(), "Nueva
-                // Postulación", ...);
+                // Postulación", "...", "INFO", petition, postulation);
 
                 return mapToResponse(postulation);
         }
 
-        // Listar postulaciones por petición (Para el Cliente)
-        public List<PostulationResponse> getPostulationsByPetition(Integer idPetition) {
-                return postulationRepository.findByPetition_IdPetition(idPetition).stream()
-                                .map(this::mapToResponse)
-                                .collect(Collectors.toList());
+        /**
+         * Listar postulaciones por petición (Para el Cliente) - PAGINADO.
+         * Permite ver los candidatos de 10 en 10.
+         */
+        public Page<PostulationResponse> getPostulationsByPetition(Integer idPetition, Pageable pageable) {
+                return postulationRepository.findByPetition_IdPetition(idPetition, pageable)
+                                .map(this::mapToResponse);
+        }
+
+        /**
+         * Listar MIS postulaciones (Para el Proveedor) - PAGINADO.
+         * Permite al proveedor ver su historial.
+         */
+        public Page<PostulationResponse> getMyPostulations(Pageable pageable) {
+                String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+                                .getUsername();
+                User user = userRepository.findByEmail(email).orElseThrow();
+
+                Provider provider = providerRepository.findByUser_IdUser(user.getIdUser())
+                                .orElseThrow(() -> new RuntimeException("No tienes perfil de proveedor activo."));
+
+                return postulationRepository.findByProvider_IdProvider(provider.getIdProvider(), pageable)
+                                .map(this::mapToResponse);
+        }
+
+        /**
+         * El Cliente elige a un ganador.
+         */
+        @Transactional
+        public void acceptPostulation(Integer idPostulation) {
+                // 1. Validaciones iniciales
+                String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+                                .getUsername();
+                User clientUser = userRepository.findByEmail(email).orElseThrow();
+
+                Postulation postulation = postulationRepository.findById(idPostulation)
+                                .orElseThrow(() -> new RuntimeException("Postulación no encontrada"));
+                Petition petition = postulation.getPetition();
+
+                if (!petition.getCustomer().getUser().getIdUser().equals(clientUser.getIdUser())) {
+                        throw new RuntimeException(
+                                        "No tienes permiso para aceptar esta postulación. No eres el dueño.");
+                }
+
+                if ("ADJUDICADA".equals(petition.getState().getName())
+                                || "CERRADA".equals(petition.getState().getName())) {
+                        throw new RuntimeException("Esta petición ya fue adjudicada o cerrada previamente.");
+                }
+
+                // 2. Marcar Ganadora
+                PostulationState acceptedState = postulationStateRepository.findByName("ACEPTADA")
+                                .orElseThrow(() -> new RuntimeException("Estado ACEPTADA no encontrado"));
+                postulation.setState(acceptedState);
+                postulation.setWinner(true);
+                postulationRepository.save(postulation);
+
+                // Notificar al ganador
+                notificationService.sendNotification(
+                                postulation.getProvider().getUser(),
+                                "¡Felicidades! Tu propuesta fue aceptada",
+                                "El cliente ha aceptado tu propuesta para: " + petition.getDescription(),
+                                "SUCCESS",
+                                petition,
+                                postulation);
+
+                // 3. Cerrar Petición
+                PetitionState adjudicadaState = petitionStateRepository.findByName("ADJUDICADA")
+                                .orElseThrow(() -> new RuntimeException("Estado ADJUDICADA no encontrado"));
+                petition.setState(adjudicadaState);
+                petitionRepository.save(petition);
+
+                // 4. Rechazar automáticamente las demás
+                PostulationState rejectedState = postulationStateRepository.findByName("RECHAZADA")
+                                .orElseThrow(() -> new RuntimeException("Estado RECHAZADA no encontrado"));
+
+                // TRUCO: Usamos Pageable.unpaged() para reutilizar el método del repositorio
+                // pero trayendo TODAS para rechazarlas
+                Page<Postulation> allCandidates = postulationRepository
+                                .findByPetition_IdPetition(petition.getIdPetition(), Pageable.unpaged());
+
+                for (Postulation p : allCandidates) {
+                        if (!p.getIdPostulation().equals(idPostulation)) {
+                                p.setState(rejectedState);
+                                postulationRepository.save(p);
+
+                                notificationService.sendNotification(
+                                                p.getProvider().getUser(),
+                                                "Postulación finalizada",
+                                                "Otra propuesta fue seleccionada para la petición: "
+                                                                + petition.getDescription(),
+                                                "INFO",
+                                                petition,
+                                                p);
+                        }
+                }
         }
 
         private PostulationResponse mapToResponse(Postulation p) {
@@ -122,82 +206,5 @@ public class PostulationService {
                                 .state(p.getState().getName())
                                 .isWinner(p.getWinner())
                                 .build();
-        }
-
-        /**
-         * El Cliente elige a un ganador.
-         * Cierra la petición, adjudica al ganador y rechaza a los demás.
-         */
-        @Transactional
-        public void acceptPostulation(Integer idPostulation) {
-                // 1. Obtener usuario actual (el Cliente)
-                String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
-                                .getUsername();
-                User clientUser = userRepository.findByEmail(email).orElseThrow();
-
-                // 2. Buscar la postulación
-                Postulation postulation = postulationRepository.findById(idPostulation)
-                                .orElseThrow(() -> new RuntimeException("Postulación no encontrada"));
-
-                Petition petition = postulation.getPetition();
-
-                // 3. Validar que el usuario sea el DUEÑO de la petición
-                if (!petition.getCustomer().getUser().getIdUser().equals(clientUser.getIdUser())) {
-                        throw new RuntimeException(
-                                        "No tienes permiso para aceptar esta postulación. No eres el dueño.");
-                }
-
-                // 4. Validar que la petición no esté ya cerrada
-                if ("ADJUDICADA".equals(petition.getState().getName())
-                                || "CERRADA".equals(petition.getState().getName())) {
-                        throw new RuntimeException("Esta petición ya fue adjudicada o cerrada previamente.");
-                }
-
-                // --- LÓGICA DE ACTUALIZACIÓN ---
-
-                // A. Marcar Postulación como Ganadora
-                PostulationState acceptedState = postulationStateRepository.findByName("ACEPTADA")
-                                .orElseThrow(() -> new RuntimeException("Estado ACEPTADA no encontrado"));
-                postulation.setState(acceptedState);
-                postulation.setWinner(true);
-                postulationRepository.save(postulation);
-
-                // --- NOTIFICACIÓN AL GANADOR ---
-                notificationService.sendNotification(
-                                postulation.getProvider().getUser(),
-                                "¡Felicidades! Tu propuesta fue aceptada",
-                                "El cliente " + clientUser.getName() + " ha aceptado tu propuesta para: "
-                                                + petition.getDescription(),
-                                "SUCCESS",
-                                petition,
-                                postulation);
-
-                // B. Cambiar estado de la Petición a ADJUDICADA
-                PetitionState adjudicadaState = petitionStateRepository.findByName("ADJUDICADA")
-                                .orElseThrow(() -> new RuntimeException("Estado ADJUDICADA no encontrado"));
-                petition.setState(adjudicadaState);
-                petitionRepository.save(petition);
-
-                // C. Rechazar automáticamente las demás postulaciones
-                PostulationState rejectedState = postulationStateRepository.findByName("RECHAZADA")
-                                .orElseThrow(() -> new RuntimeException("Estado RECHAZADA no encontrado"));
-
-                List<Postulation> otherPostulations = postulationRepository
-                                .findByPetition_IdPetition(petition.getIdPetition());
-                for (Postulation p : otherPostulations) {
-                        if (!p.getIdPostulation().equals(idPostulation)) { // Si no es la ganadora
-                                p.setState(rejectedState);
-                                postulationRepository.save(p);
-                                // --- NOTIFICACIÓN A LOS RECHAZADOS ---
-                                notificationService.sendNotification(
-                                                p.getProvider().getUser(),
-                                                "Postulación finalizada",
-                                                "Otra propuesta fue seleccionada para la petición: "
-                                                                + petition.getDescription(),
-                                                "INFO",
-                                                petition,
-                                                p);
-                        }
-                }
         }
 }
