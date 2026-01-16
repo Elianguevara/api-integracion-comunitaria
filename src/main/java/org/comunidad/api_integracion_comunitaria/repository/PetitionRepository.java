@@ -1,24 +1,62 @@
 package org.comunidad.api_integracion_comunitaria.repository;
 
 import org.comunidad.api_integracion_comunitaria.model.Petition;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import java.util.List;
+import org.springframework.stereotype.Repository;
 
+/**
+ * Repositorio de acceso a datos para la entidad {@link Petition}.
+ * <p>
+ * Extiende de JpaRepository para operaciones CRUD básicas e implementa
+ * métodos de búsqueda paginados para optimizar el rendimiento en el frontend.
+ * </p>
+ */
+@Repository
 public interface PetitionRepository extends JpaRepository<Petition, Integer> {
 
-    // 1. Para que el Cliente vea SUS peticiones
-    List<Petition> findByCustomer_IdCustomer(Integer idCustomer);
+    /**
+     * Busca todas las peticiones creadas por un cliente específico de forma
+     * paginada.
+     * Útil para la vista "Mis Peticiones" en el panel del cliente.
+     *
+     * @param idCustomer ID del cliente propietario de las peticiones.
+     * @param pageable   Objeto de configuración de paginación (página, tamaño,
+     *                   orden).
+     * @return Una página (Page) de peticiones.
+     */
+    Page<Petition> findByCustomer_IdCustomer(Integer idCustomer, Pageable pageable);
 
-    // 2. Para el "Feed" público: Peticiones activas (filtra por nombre de estado)
-    // Asumiendo que el estado publicado se llama "PUBLICADA"
-    List<Petition> findByState_Name(String stateName);
+    /**
+     * Busca peticiones por el nombre de su estado.
+     * Es el método principal para el "Feed de trabajos" (ej: buscar solo
+     * "PUBLICADA").
+     *
+     * @param stateName Nombre del estado (ej: "PUBLICADA", "ADJUDICADA").
+     * @param pageable  Objeto de configuración de paginación.
+     * @return Una página de peticiones filtradas por estado.
+     */
+    Page<Petition> findByState_Name(String stateName, Pageable pageable);
 
-    // 3. Filtros avanzados (ejemplo: buscar por categoría/tipo de petición y
-    // estado)
-    List<Petition> findByTypePetition_IdTypePetitionAndState_Name(Integer idType, String stateName);
+    /**
+     * Filtro avanzado: Busca peticiones por Categoría (Tipo) y Estado.
+     * Permite al proveedor filtrar trabajos, ej: "Ver solo Plomería que estén
+     * Publicadas".
+     *
+     * @param idType    ID del tipo de petición (Categoría).
+     * @param stateName Nombre del estado.
+     * @param pageable  Objeto de configuración de paginación.
+     * @return Una página de peticiones que cumplen ambos criterios.
+     */
+    Page<Petition> findByTypePetition_IdTypePetitionAndState_Name(Integer idType, String stateName, Pageable pageable);
 
-    // Opcional: Una query nativa o JPQL si necesitas filtrar las que NO están
-    // borradas
-    // Aunque tu entidad ya tiene 'isDeleted', JPA lo maneja si lo pides:
-    List<Petition> findByIsDeletedFalse();
+    /**
+     * Busca todas las peticiones que no han sido marcadas como eliminadas (Soft
+     * Delete).
+     *
+     * @param pageable Objeto de configuración de paginación.
+     * @return Página de peticiones activas.
+     */
+    Page<Petition> findByIsDeletedFalse(Pageable pageable);
 }
