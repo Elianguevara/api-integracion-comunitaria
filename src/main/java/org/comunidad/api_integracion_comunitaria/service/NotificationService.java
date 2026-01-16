@@ -2,14 +2,12 @@ package org.comunidad.api_integracion_comunitaria.service;
 
 import lombok.RequiredArgsConstructor;
 import org.comunidad.api_integracion_comunitaria.dto.response.NotificationResponse;
-import org.comunidad.api_integracion_comunitaria.model.Notification;
-import org.comunidad.api_integracion_comunitaria.model.Petition;
-import org.comunidad.api_integracion_comunitaria.model.Postulation;
-import org.comunidad.api_integracion_comunitaria.model.Provider;
-import org.comunidad.api_integracion_comunitaria.model.User;
+import org.comunidad.api_integracion_comunitaria.model.*;
 import org.comunidad.api_integracion_comunitaria.repository.NotificationRepository;
 import org.comunidad.api_integracion_comunitaria.repository.ProviderRepository;
 import org.comunidad.api_integracion_comunitaria.repository.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -17,7 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,8 +24,11 @@ public class NotificationService {
     private final UserRepository userRepository;
     private final ProviderRepository providerRepository;
 
-    // Método genérico para enviar notificaciones (Lo usaremos desde otros
-    // servicios)
+    /**
+     * Envía una notificación a un usuario específico.
+     * Método genérico para ser usado por otros servicios (Peticiones,
+     * Postulaciones, etc).
+     */
     @Transactional
     public void sendNotification(User recipient, String title, String message, String type,
             Petition petition, Postulation postulation) {
@@ -45,21 +45,49 @@ public class NotificationService {
         notificationRepository.save(notification);
     }
 
-    // Obtener mis notificaciones
-    public List<NotificationResponse> getMyNotifications() {
+    /**
+     * Recupera las notificaciones del usuario autenticado de forma paginada.
+     *
+     * @param pageable Configuración de la página solicitada (página, tamaño,
+     *                 orden).
+     * @return Página de respuestas de notificaciones.
+     */
+    public Page<NotificationResponse> getMyNotifications(Pageable pageable) {
+        // 1. Obtener usuario actual
         String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
                 .getUsername();
-        User user = userRepository.findByEmail(email).orElseThrow();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
-        return notificationRepository.findByUser_IdUserOrderByCreatedAtDesc(user.getIdUser()).stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
+        // 2. Buscar en BD usando paginación
+        // Nota: El ordenamiento (OrderByCreatedAtDesc) debe venir configurado en el
+        // objeto 'pageable' desde el Controller
+        return notificationRepository.findByUser_IdUser(user.getIdUser(), pageable)
+                .map(this::mapToResponse);
     }
 
-    // Marcar como leída
+    /**
+     * Cuenta las notificaciones sin leer del usuario actual.
+     * Ideal para mostrar el "badge" o contador rojo en la interfaz.
+     */
+    public long getUnreadCount() {
+        String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+                .getUsername();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        return notificationRepository.countByUser_IdUserAndIsReadFalse(user.getIdUser());
+    }
+
+    /**
+     * Marca una notificación específica como leída.
+     */
     public void markAsRead(Integer id) {
         Notification notification = notificationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Notificación no encontrada"));
+
+        // Opcional: Validar que la notificación pertenezca al usuario actual por
+        // seguridad
 
         notification.setIsRead(true);
         notification.setReadAt(LocalDateTime.now());
@@ -67,24 +95,19 @@ public class NotificationService {
     }
 
     /**
-     * CORRECCIÓN PRINCIPAL:
-     * Este método ahora busca proveedores filtrando por Profesión Y Ciudad.
+     * Notifica masivamente a proveedores filtrando por Profesión y Ciudad.
      */
     @Transactional
     public void notifyProvidersByProfessionAndCity(Integer idProfession, Integer idCity, Petition petition) {
-        // 1. Buscamos a los interesados usando la query optimizada (Punto 2 del plan)
+        // 1. Buscamos a los interesados
         List<Provider> providers = providerRepository.findByProfessionAndCity(idProfession, idCity);
 
-        // 2. Filtramos al propio dueño (por si un plomero pide un plomero y se
-        // auto-notifica)
+        // 2. Filtramos al propio dueño
         Integer ownerId = petition.getCustomer().getUser().getIdUser();
 
         // 3. Enviamos masivamente
         for (Provider provider : providers) {
-            // Verificamos que no sea el mismo usuario que creó la petición
             if (!provider.getUser().getIdUser().equals(ownerId)) {
-
-                // Construimos un mensaje más personalizado
                 String professionName = petition.getProfession().getName();
                 String cityName = petition.getCity() != null ? petition.getCity().getName() : "tu zona";
 
@@ -99,6 +122,9 @@ public class NotificationService {
         }
     }
 
+    /**
+     * Convierte Entidad a DTO.
+     */
     private NotificationResponse mapToResponse(Notification n) {
         return NotificationResponse.builder()
                 .id(n.getId())
