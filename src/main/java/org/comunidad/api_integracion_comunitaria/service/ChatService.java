@@ -5,6 +5,8 @@ import org.comunidad.api_integracion_comunitaria.dto.response.ConversationRespon
 import org.comunidad.api_integracion_comunitaria.dto.response.MessageResponse;
 import org.comunidad.api_integracion_comunitaria.model.*;
 import org.comunidad.api_integracion_comunitaria.repository.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -32,8 +34,6 @@ public class ChatService {
     }
 
     // --- 1. Crear o Recuperar Chat ---
-    // Se usa cuando un proveedor contacta por una petición, o cuando un cliente
-    // contacta a un postulante.
     @Transactional
     public ConversationResponse createOrGetConversation(Integer petitionId, Integer targetUserId) {
         User currentUser = getAuthenticatedUser();
@@ -92,7 +92,8 @@ public class ChatService {
 
         Message savedMsg = messageRepository.save(message);
 
-        // TODO: Aquí podrías disparar una Notificación (Push) al otro usuario
+        // TODO: Aquí se debería integrar NotificationService para avisar al otro
+        // usuario
 
         return mapToMessageResponse(savedMsg, currentUser.getIdUser());
     }
@@ -105,38 +106,32 @@ public class ChatService {
                 .collect(Collectors.toList());
     }
 
-    // --- 4. Ver historial de mensajes ---
-    public List<MessageResponse> getConversationMessages(Long conversationId) {
+    // --- 4. Ver historial de mensajes (PAGINADO) ---
+    // Actualizado para recibir Pageable y devolver Page<MessageResponse>
+    public Page<MessageResponse> getConversationMessages(Long conversationId, Pageable pageable) {
         User currentUser = getAuthenticatedUser();
 
-        // Seguridad
+        // Seguridad: Verificar si soy participante
         if (!participantRepository.existsByConversation_IdConversationAndUser_IdUser(conversationId,
                 currentUser.getIdUser())) {
             throw new RuntimeException("Acceso denegado a esta conversación.");
         }
 
-        return messageRepository.findByConversation_IdConversationOrderByCreatedAtAsc(conversationId).stream()
-                .map(m -> mapToMessageResponse(m, currentUser.getIdUser()))
-                .collect(Collectors.toList());
+        // Llamada al repositorio paginado y mapeo a DTO
+        return messageRepository.findByConversation_IdConversation(conversationId, pageable)
+                .map(m -> mapToMessageResponse(m, currentUser.getIdUser()));
     }
 
     // --- Mappers ---
     private ConversationResponse mapToConversationResponse(Conversation c, Integer myUserId) {
-        // Encontrar al "otro" usuario buscando en los participantes quien NO soy yo
-        // Nota: Esto asume chats de 2 personas.
-        // Como ConversationParticipant no tiene relación directa mapeada en
-        // Conversation en tu entidad actual,
-        // necesitamos una query extra o mapear la lista en la entidad Conversation
-        // (recomendado agregar @OneToMany en Conversation).
-        // POR AHORA: Para simplificar sin tocar tu entidad, devolvemos nombre genérico
-        // o necesitamos la lista.
-        // Solución rápida: Devolvemos "Chat sobre: [Titulo Petición]"
-
+        // Nota: Para obtener el nombre real del "otro" usuario, se requeriría una
+        // consulta extra
+        // o mejorar la entidad Conversation. Por ahora se mantiene la lógica original.
         return ConversationResponse.builder()
                 .idConversation(c.getIdConversation())
                 .petitionId(c.getPetition().getIdPetition())
-                .petitionTitle(c.getPetition().getDescription()) // O usar título si tienes
-                .otherUserName("Usuario del Chat") // Idealmente: obtener nombre del otro participante
+                .petitionTitle(c.getPetition().getDescription())
+                .otherUserName("Usuario del Chat")
                 .build();
     }
 
