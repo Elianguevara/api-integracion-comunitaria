@@ -23,7 +23,7 @@ import java.util.List;
  * <ul>
  * <li>Registro de nuevos usuarios (Clientes y Proveedores).</li>
  * <li>Autenticación (Login) y generación de tokens JWT.</li>
- * <li>Asignación de roles y perfiles específicos.</li>
+ * <li>Identificación y retorno del rol del usuario para la navegación en el frontend.</li>
  * </ul>
  * </p>
  */
@@ -48,19 +48,16 @@ public class AuthenticationService {
      * <ol>
      * <li>Verifica que el email y el nombre/apellido no existan previamente.</li>
      * <li>Crea la entidad {@link User} base con contraseña encriptada.</li>
-     * <li>Asigna el rol correspondiente (ROLE_USER o ROLE_PROVIDER).</li>
+     * <li>Asigna el rol correspondiente en BD (ROLE_USER o ROLE_PROVIDER).</li>
      * <li>Crea el perfil específico ({@link Customer} o {@link Provider}).</li>
-     * <li>Genera y retorna un token JWT.</li>
+     * <li>Genera un token JWT y determina el rol formateado para el frontend.</li>
      * </ol>
      * </p>
      *
-     * @param request Objeto {@link RegisterRequest} con los datos del formulario de
-     *                registro.
-     * @return {@link AuthenticationResponse} conteniendo el token JWT generado.
-     * @throws RuntimeException Si el email o la combinación de nombre/apellido ya
-     *                          existen,
-     *                          o si el rol configurado no se encuentra en la base
-     *                          de datos.
+     * @param request Objeto {@link RegisterRequest} con los datos del formulario de registro.
+     * @return {@link AuthenticationResponse} conteniendo el token JWT y el rol del usuario.
+     * @throws RuntimeException Si el email o la combinación de nombre/apellido ya existen,
+     * o si el rol configurado no se encuentra en la base de datos.
      */
     @Transactional
     public AuthenticationResponse register(RegisterRequest request) {
@@ -89,11 +86,13 @@ public class AuthenticationService {
         User savedUser = userRepository.save(user);
 
         // 3. Determinar y Asignar Rol
-        // Se asume que el frontend envía "PROVIDER" o cualquier otra cosa para cliente.
-        final String roleName = "PROVIDER".equalsIgnoreCase(request.getRole()) ? "ROLE_PROVIDER" : "ROLE_USER";
+        // Determinamos el nombre del Rol interno (BD) y externo (Frontend)
+        boolean isProvider = "PROVIDER".equalsIgnoreCase(request.getRole());
+        final String dbRoleName = isProvider ? "ROLE_PROVIDER" : "ROLE_USER";
+        final String frontendRole = isProvider ? "PROVIDER" : "CUSTOMER";
 
-        Role roleEntity = roleRepository.findByName(roleName)
-                .orElseThrow(() -> new RuntimeException("Error interno: Rol no encontrado en BD (" + roleName + ")"));
+        Role roleEntity = roleRepository.findByName(dbRoleName)
+                .orElseThrow(() -> new RuntimeException("Error interno: Rol no encontrado en BD (" + dbRoleName + ")"));
 
         UserRole userRole = new UserRole();
         userRole.setUser(savedUser);
@@ -101,7 +100,7 @@ public class AuthenticationService {
         userRoleRepository.save(userRole);
 
         // 4. Crear Perfil Específico (Strategy implícito)
-        if ("ROLE_PROVIDER".equals(roleName)) {
+        if (isProvider) {
             Provider provider = new Provider();
             provider.setUser(savedUser);
             // El proveedor se crea con perfil vacío, pendiente de completar
@@ -117,30 +116,26 @@ public class AuthenticationService {
 
         return AuthenticationResponse.builder()
                 .token(jwtToken)
+                .role(frontendRole) // Devolvemos el rol limpio para redirección inmediata
                 .build();
     }
 
     /**
      * Autentica a un usuario existente.
      * <p>
-     * Valida las credenciales contra la base de datos usando
-     * {@link AuthenticationManager}.
-     * Si son correctas, genera un nuevo token JWT.
+     * Valida las credenciales contra la base de datos usando {@link AuthenticationManager}.
+     * Si son correctas:
+     * <ol>
+     * <li>Genera un nuevo token JWT.</li>
+     * <li>Recupera el rol del usuario desde la base de datos.</li>
+     * <li>Mapea el rol interno (ej: ROLE_USER) a formato frontend (ej: CUSTOMER).</li>
+     * </ol>
      * </p>
      *
      * @param request Objeto {@link AuthenticationRequest} con email y contraseña.
-     * @return {@link AuthenticationResponse} con el token JWT.
-     * @throws org.springframework.security.core.AuthenticationException Si las
-     *                                                                   credenciales
-     *                                                                   son
-     *                                                                   inválidas.
-     * @throws java.util.NoSuchElementException                          Si el
-     *                                                                   usuario no
-     *                                                                   existe en
-     *                                                                   la base de
-     *                                                                   datos tras
-     *                                                                   la
-     *                                                                   autenticación.
+     * @return {@link AuthenticationResponse} con el token JWT y el rol detectado.
+     * @throws org.springframework.security.core.AuthenticationException Si las credenciales son inválidas.
+     * @throws RuntimeException Si el usuario no existe tras la autenticación (inconsistencia de datos).
      */
     public AuthenticationResponse authenticate(AuthenticationRequest request) {
         // Este método lanzará BadCredentialsException si falla el login
@@ -155,14 +150,43 @@ public class AuthenticationService {
 
         var jwtToken = jwtService.generateToken(mapToUserDetails(user));
 
+        // Recuperamos el rol "limpio" para que el frontend sepa a dónde redirigir
+        String roleName = getFrontendRoleNameByUser(user);
+
         return AuthenticationResponse.builder()
                 .token(jwtToken)
+                .role(roleName)
                 .build();
     }
 
     /**
-     * Convierte una entidad de dominio {@link User} a un {@link UserDetails} de
-     * Spring Security.
+     * Método auxiliar para obtener el rol en formato compatible con el Frontend.
+     * <p>
+     * Traduce los roles de Spring Security (ROLE_PROVIDER, ROLE_USER) a los
+     * tipos de usuario de la aplicación (PROVIDER, CUSTOMER).
+     * </p>
+     * * @param user El usuario del cual extraer el rol.
+     * @return Cadena con el rol ("PROVIDER" o "CUSTOMER").
+     */
+    private String getFrontendRoleNameByUser(User user) {
+        List<UserRole> userRoles = userRoleRepository.findByUser_IdUser(user.getIdUser());
+
+        // Fallback por defecto si no tiene roles asignados
+        if (userRoles.isEmpty()) return "CUSTOMER";
+
+        // Asumimos que el usuario tiene un rol principal. Tomamos el primero.
+        String dbRole = userRoles.get(0).getRole().getName();
+
+        if ("ROLE_PROVIDER".equalsIgnoreCase(dbRole)) {
+            return "PROVIDER";
+        } else {
+            // ROLE_USER u otros se tratan como Cliente
+            return "CUSTOMER";
+        }
+    }
+
+    /**
+     * Convierte una entidad de dominio {@link User} a un {@link UserDetails} de Spring Security.
      * <p>
      * Este método es crucial para que JWTService pueda leer los roles y permisos
      * del usuario al momento de crear el token.
@@ -176,10 +200,7 @@ public class AuthenticationService {
         // Buscamos los roles en la tabla intermedia (UserRole)
         List<UserRole> userRoles = userRoleRepository.findByUser_IdUser(user.getIdUser());
 
-        // Transformamos los roles al formato esperado por el builder (sin prefijo ROLE_
-        // si es necesario,
-        // aunque Spring Security suele manejarlo internamente, aquí lo limpiamos por
-        // compatibilidad)
+        // Transformamos los roles al formato esperado por el builder (sin prefijo ROLE_)
         String[] roles = userRoles.stream()
                 .map(ur -> ur.getRole().getName().replace("ROLE_", ""))
                 .toArray(String[]::new);
