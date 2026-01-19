@@ -36,4 +36,7 @@ public class AuthenticationResponse {
      * </p>
      */
     private String role;
+    // Agregamos datos del usuario
+    private String name;
+    private String email;
 }

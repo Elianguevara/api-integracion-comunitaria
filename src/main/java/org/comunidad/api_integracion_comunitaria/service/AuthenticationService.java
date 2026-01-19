@@ -117,6 +117,8 @@ public class AuthenticationService {
         return AuthenticationResponse.builder()
                 .token(jwtToken)
                 .role(frontendRole) // Devolvemos el rol limpio para redirección inmediata
+                .name(savedUser.getName() + " " + savedUser.getLastname())
+                .email(savedUser.getEmail())
                 .build();
     }
 
@@ -156,6 +158,8 @@ public class AuthenticationService {
         return AuthenticationResponse.builder()
                 .token(jwtToken)
                 .role(roleName)
+                .name(user.getName() + " " + user.getLastname())
+                .email(user.getEmail())
                 .build();
     }
 
