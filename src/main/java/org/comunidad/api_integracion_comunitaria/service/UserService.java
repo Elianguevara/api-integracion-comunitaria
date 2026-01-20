@@ -26,4 +26,33 @@ public class UserService {
         // 3. Guardamos el cambio
         userRepository.save(user);
     }
+    /**
+     * Actualiza información básica (Nombre, Apellido) buscando por Email.
+     */
+    @Transactional
+    public User updateBasicInfo(String email, User userUpdates) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + email));
+
+        if (userUpdates.getName() != null && !userUpdates.getName().isBlank()) {
+            user.setName(userUpdates.getName());
+        }
+        if (userUpdates.getLastname() != null && !userUpdates.getLastname().isBlank()) {
+            user.setLastname(userUpdates.getLastname());
+        }
+
+        return userRepository.save(user);
+    }
+
+    /**
+     * Busca al usuario por email y ejecuta la baja lógica.
+     */
+    @Transactional
+    public void deleteUserByEmail(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + email));
+
+        // Reutilizamos el método existente que ya tenías
+        deleteUser(user.getIdUser());
+    }
 }

@@ -1,37 +1,68 @@
 package org.comunidad.api_integracion_comunitaria.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.comunidad.api_integracion_comunitaria.model.User;
 import org.comunidad.api_integracion_comunitaria.service.UserService;
-import org.comunidad.api_integracion_comunitaria.repository.UserRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * Controlador REST para la gestión de usuarios.
+ * <p>
+ * Este controlador maneja las operaciones relacionadas con la cuenta del usuario autenticado,
+ * delegando la lógica de negocio a {@link UserService}.
+ * </p>
+ */
 @RestController
 @RequestMapping("/users")
 @RequiredArgsConstructor
+@Tag(name = "User Controller", description = "Operaciones de gestión de perfil de usuario")
 public class UserController {
 
     private final UserService userService;
-    private final UserRepository userRepository;
 
     /**
-     * Endpoint para que un usuario elimine su PROPIA cuenta.
-     * URL: DELETE /users/me
+     * Actualiza la información básica del usuario autenticado.
+     * <p>
+     * Obtiene el usuario actual del contexto de seguridad y actualiza sus datos
+     * permitidos (Nombre, Apellido, etc.) a través del servicio.
+     * </p>
+     *
+     * @param userUpdates Objeto {@link User} con los datos a modificar.
+     * @return {@link ResponseEntity} con el usuario actualizado y estado HTTP 200 OK.
      */
-    @DeleteMapping("/me")
-    public ResponseEntity<String> deleteMyAccount() {
-        // 1. Obtener el usuario autenticado del contexto de seguridad
+    @Operation(summary = "Actualizar perfil", description = "Modifica nombre y apellido del usuario logueado.")
+    @PutMapping("/me")
+    public ResponseEntity<User> updateMyUser(@RequestBody User userUpdates) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getName();
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+        User updatedUser = userService.updateBasicInfo(email, userUpdates);
 
-        // 2. Ejecutar la baja lógica
-        userService.deleteUser(user.getIdUser());
+        return ResponseEntity.ok(updatedUser);
+    }
+
+    /**
+     * Elimina la cuenta del usuario autenticado (Baja Lógica).
+     * <p>
+     * No elimina el registro físicamente de la base de datos, sino que cambia su estado
+     * a inactivo para prevenir futuros inicios de sesión.
+     * </p>
+     *
+     * @return {@link ResponseEntity} con un mensaje de confirmación.
+     */
+    @Operation(summary = "Eliminar cuenta", description = "Realiza una baja lógica de la cuenta actual.")
+    @DeleteMapping("/me")
+    public ResponseEntity<String> deleteMyAccount() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String email = auth.getName();
+
+        // Delegamos la búsqueda y eliminación al servicio
+        userService.deleteUserByEmail(email);
 
         return ResponseEntity.ok("Tu cuenta ha sido eliminada exitosamente (Baja lógica).");
     }
