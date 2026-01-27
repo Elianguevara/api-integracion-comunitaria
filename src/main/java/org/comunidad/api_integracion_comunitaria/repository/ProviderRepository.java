@@ -1,6 +1,7 @@
 package org.comunidad.api_integracion_comunitaria.repository;
 
 import org.comunidad.api_integracion_comunitaria.model.Provider;
+import org.comunidad.api_integracion_comunitaria.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -39,4 +40,6 @@ public interface ProviderRepository extends JpaRepository<Provider, Integer> {
             "AND pc.city.idCity = :idCity")
     List<Provider> findByProfessionAndCity(@Param("idProfession") Integer idProfession,
             @Param("idCity") Integer idCity);
+
+    Optional<Provider> findByUser(User user);
 }
