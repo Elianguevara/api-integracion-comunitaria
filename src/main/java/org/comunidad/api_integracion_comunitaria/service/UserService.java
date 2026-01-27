@@ -45,7 +45,16 @@ public class UserService {
             Provider p = providerOpt.get();
             response.role("PROVIDER");
             response.description(p.getDescription());
-            if (p.getProfession() != null) response.profession(p.getProfession().getName());
+
+            if (p.getProfession() != null) {
+                response.profession(p.getProfession().getName());
+            }
+
+            // Formatear dirección para Proveedor
+            if (p.getAddress() != null) {
+                String fullAddress = p.getAddress().getStreet() + " " + p.getAddress().getNumber();
+                response.address(fullAddress);
+            }
 
             response.stats(List.of(
                     new UserProfileResponse.StatDTO("Nivel", "Profesional"),
@@ -55,6 +64,12 @@ public class UserService {
             Customer c = customerOpt.get();
             response.role("CUSTOMER");
             response.phone(c.getPhone());
+
+            // Formatear dirección para Cliente
+            if (c.getAddress() != null) {
+                String fullAddress = c.getAddress().getStreet() + " " + c.getAddress().getNumber();
+                response.address(fullAddress);
+            }
 
             response.stats(List.of(
                     new UserProfileResponse.StatDTO("Actividad", "Alta"),
@@ -76,6 +91,12 @@ public class UserService {
         // 1. Actualizar datos base (Tabla User)
         if (request.getName() != null) user.setName(request.getName());
         if (request.getLastname() != null) user.setLastname(request.getLastname());
+
+        // --- AQUÍ GUARDAMOS LA IMAGEN ---
+        if (request.getProfileImage() != null) {
+            user.setProfileImage(request.getProfileImage());
+        }
+
         userRepository.save(user);
 
         // 2. Actualizar datos específicos (Tabla Provider o Customer)
