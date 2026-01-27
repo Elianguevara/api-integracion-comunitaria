@@ -4,7 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 import java.util.List;
 
 @Data
@@ -14,16 +13,15 @@ public class UserProfileResponse {
     private String name;
     private String lastname;
     private String email;
-    private String role; // "CUSTOMER" o "PROVIDER"
+    private String role;
     private String profileImage;
 
-    // Campos específicos (pueden ser null dependiendo del rol)
-    private String phone;       // Viene de Customer
-    private String address;     // Viene de Address (concatenado o objeto)
-    private String description; // Viene de Provider
-    private String profession;  // Viene de Provider -> Profession
+    // Campos específicos
+    private String phone;
+    private String address;
+    private String description;
+    private String profession;
 
-    // Estadísticas calculadas (opcional, para que el frontend no invente números)
     private List<StatDTO> stats;
 
     @Data
