@@ -24,13 +24,12 @@ public interface NotificationRepository extends JpaRepository<Notification, Inte
      * todo el historial de golpe.
      * </p>
      *
-     * @param idUser   ID del usuario dueño de las notificaciones.
+     * @param userId   ID del usuario dueño de las notificaciones.
      * @param pageable Configuración de paginación (ej: página 0, tamaño 20, orden
      *                 DESC por fecha).
      * @return Una página (Page) de notificaciones.
      */
-    Page<Notification> findByUser_IdUser(Integer idUser, Pageable pageable);
-
+    Page<Notification> findByUser_IdUserOrderByCreatedAtDesc(Integer userId, Pageable pageable);
     /**
      * Cuenta cuántas notificaciones tiene el usuario sin leer.
      * <p>

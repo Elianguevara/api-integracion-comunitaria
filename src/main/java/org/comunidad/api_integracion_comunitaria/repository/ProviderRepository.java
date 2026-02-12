@@ -5,41 +5,66 @@ import org.comunidad.api_integracion_comunitaria.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Repositorio para gestionar la entidad Provider (Proveedores).
+ * Incluye consultas optimizadas para el sistema de notificaciones y filtrado.
+ */
+@Repository
 public interface ProviderRepository extends JpaRepository<Provider, Integer> {
-    // Buscar proveedor por ID de usuario
+
+    /**
+     * Busca un proveedor asociado a un ID de usuario específico.
+     * Útil para recuperar el perfil del proveedor desde el token JWT.
+     */
     Optional<Provider> findByUser_IdUser(Integer idUser);
 
-    // 1. Buscar proveedores por Profesión (Ej: Todos los Plomeros)
-    // Asumimos que tu entidad Provider tiene un campo 'profession'
+    /**
+     * Busca un proveedor por la entidad User completa.
+     */
+    Optional<Provider> findByUser(User user);
+
+    /**
+     * 1. Buscar proveedores por Profesión.
+     * Recupera todos los proveedores que ejercen una profesión específica.
+     * * @param idProfession ID de la profesión (ej: 1 = Plomero).
+     */
     List<Provider> findByProfession_IdProfession(Integer idProfession);
 
-    // 2. Buscar proveedores por Categoría
-    // NOTA: Esto depende de cómo tengas mapeada la relación en Provider.
-    // Si es ManyToMany directa:
-    // List<Provider> findByCategories_IdCategory(Integer idCategory);
-
-    // Si usas una tabla intermedia manual (ProviderCategory), usamos una Query
-    // personalizada:
-    @Query("SELECT p FROM Provider p JOIN p.providerCategories pc WHERE pc.category.idCategory = :idCategory")
-    List<Provider> findByCategoryId(@Param("idCategory") Integer idCategory);
-
-    // 3. Buscar proveedores por Ciudad (Para no notificar a un plomero de otra
-    // provincia)
+    /**
+     * 2. Buscar proveedores por Ciudad.
+     * Utiliza una Query personalizada para navegar la relación ManyToMany o OneToMany con ciudades.
+     * * @param idCity ID de la ciudad.
+     */
     @Query("SELECT p FROM Provider p JOIN p.providerCities pc WHERE pc.city.idCity = :idCity")
     List<Provider> findByCityId(@Param("idCity") Integer idCity);
 
-    // 4. Búsqueda combinada: Profesión + Zona (Esta es la que usará el sistema de
-    // notificaciones)
+    /**
+     * 3. BÚSQUEDA COMBINADA (CRÍTICA PARA NOTIFICACIONES).
+     * Encuentra proveedores que tengan la profesión X Y trabajen en la ciudad Y.
+     * Se usa para notificar solo a los proveedores relevantes cuando se crea una solicitud.
+     *
+     * @param idProfession ID de la profesión requerida.
+     * @param idCity ID de la ciudad donde es el trabajo.
+     * @return Lista de proveedores que coinciden con ambos criterios.
+     */
     @Query("SELECT p FROM Provider p " +
             "JOIN p.providerCities pc " +
             "WHERE p.profession.idProfession = :idProfession " +
             "AND pc.city.idCity = :idCity")
-    List<Provider> findByProfessionAndCity(@Param("idProfession") Integer idProfession,
-            @Param("idCity") Integer idCity);
+    List<Provider> findByProfessionAndCity(
+            @Param("idProfession") Integer idProfession,
+            @Param("idCity") Integer idCity
+    );
 
-    Optional<Provider> findByUser(User user);
+    /**
+     * 4. Buscar proveedores por Categoría (Opcional).
+     * Si usas categorías (ej: Construcción, Tecnología) además de profesiones.
+     */
+    @Query("SELECT p FROM Provider p JOIN p.providerCategories pc WHERE pc.category.idCategory = :idCategory")
+    List<Provider> findByCategoryId(@Param("idCategory") Integer idCategory);
 }

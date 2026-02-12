@@ -1,7 +1,7 @@
 package org.comunidad.api_integracion_comunitaria.service;
 
 import lombok.RequiredArgsConstructor;
-import org.comunidad.api_integracion_comunitaria.dto.response.NotificationResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.comunidad.api_integracion_comunitaria.model.*;
 import org.comunidad.api_integracion_comunitaria.repository.NotificationRepository;
 import org.comunidad.api_integracion_comunitaria.repository.ProviderRepository;
@@ -9,7 +9,6 @@ import org.comunidad.api_integracion_comunitaria.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,124 +17,122 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final ProviderRepository providerRepository;
 
-    /**
-     * Envía una notificación a un usuario específico.
-     * Método genérico para ser usado por otros servicios (Peticiones,
-     * Postulaciones, etc).
-     */
+    // --- MÉTODOS DE CREACIÓN ---
+
     @Transactional
-    public void sendNotification(User recipient, String title, String message, String type,
-            Petition petition, Postulation postulation) {
-        Notification notification = new Notification();
-        notification.setUser(recipient);
-        notification.setTitle(title);
-        notification.setMessage(message);
-        notification.setNotificationType(type); // Ej: "POSTULATION_ACCEPTED"
-        notification.setIsRead(false);
-        notification.setCreatedAt(LocalDateTime.now());
-        notification.setRelatedPetition(petition);
-        notification.setRelatedPostulation(postulation);
-
-        notificationRepository.save(notification);
+    public void notifyNewPostulation(Petition petition) {
+        User clientUser = petition.getCustomer().getUser();
+        String title = "Nueva Postulación";
+        String message = "Un proveedor ha enviado un presupuesto para: " + petition.getProfession().getName();
+        String link = "/petition/" + petition.getIdPetition();
+        createNotification(clientUser, title, message, "INFO", link, petition, null);
     }
 
-    /**
-     * Recupera las notificaciones del usuario autenticado de forma paginada.
-     *
-     * @param pageable Configuración de la página solicitada (página, tamaño,
-     *                 orden).
-     * @return Página de respuestas de notificaciones.
-     */
-    public Page<NotificationResponse> getMyNotifications(Pageable pageable) {
-        // 1. Obtener usuario actual
-        String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
-                .getUsername();
+    @Transactional
+    public void notifyPostulationAccepted(Postulation postulation) {
+        User providerUser = postulation.getProvider().getUser();
+        String title = "¡Presupuesto Aceptado!";
+        String message = "Felicidades, han aceptado tu trabajo para: " + postulation.getPetition().getDescription();
+        String link = "/feed";
+        createNotification(providerUser, title, message, "SUCCESS", link, postulation.getPetition(), postulation);
+    }
+
+    @Transactional
+    public void notifyPostulationRejected(Postulation postulation) {
+        User providerUser = postulation.getProvider().getUser();
+        String title = "Postulación Finalizada";
+        String message = "El cliente ha seleccionado a otro profesional para: " + postulation.getPetition().getDescription();
+        String link = "/feed";
+        createNotification(providerUser, title, message, "WARNING", link, postulation.getPetition(), postulation);
+    }
+
+    // --- MÉTODOS DE BÚSQUEDA Y LECTURA (LOS QUE FALTABAN) ---
+
+    @Transactional(readOnly = true)
+    public Page<Notification> getMyNotifications(Pageable pageable) {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
-        // 2. Buscar en BD usando paginación
-        // Nota: El ordenamiento (OrderByCreatedAtDesc) debe venir configurado en el
-        // objeto 'pageable' desde el Controller
-        return notificationRepository.findByUser_IdUser(user.getIdUser(), pageable)
-                .map(this::mapToResponse);
+        // Asegúrate de que NotificationRepository tenga este método definido:
+        // Page<Notification> findByUser_IdUserOrderByCreatedAtDesc(Integer userId, Pageable pageable);
+        return notificationRepository.findByUser_IdUserOrderByCreatedAtDesc(user.getIdUser(), pageable);
     }
 
-    /**
-     * Cuenta las notificaciones sin leer del usuario actual.
-     * Ideal para mostrar el "badge" o contador rojo en la interfaz.
-     */
+    @Transactional(readOnly = true)
     public long getUnreadCount() {
-        String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
-                .getUsername();
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
+        // Asegúrate de que NotificationRepository tenga este método:
+        // long countByUser_IdUserAndIsReadFalse(Integer userId);
         return notificationRepository.countByUser_IdUserAndIsReadFalse(user.getIdUser());
     }
 
-    /**
-     * Marca una notificación específica como leída.
-     */
-    public void markAsRead(Integer id) {
-        Notification notification = notificationRepository.findById(id)
+    @Transactional
+    public void markAsRead(Integer idNotification) {
+        Notification notification = notificationRepository.findById(idNotification)
                 .orElseThrow(() -> new RuntimeException("Notificación no encontrada"));
 
-        // Opcional: Validar que la notificación pertenezca al usuario actual por
-        // seguridad
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        if (!notification.getUser().getEmail().equals(email)) {
+            throw new RuntimeException("No tienes permiso");
+        }
 
         notification.setIsRead(true);
         notification.setReadAt(LocalDateTime.now());
         notificationRepository.save(notification);
     }
 
+    // Método auxiliar privado
+    private void createNotification(User user, String title, String message, String type, String link, Petition petition, Postulation postulation) {
+        Notification notification = new Notification();
+        notification.setUser(user);
+        notification.setTitle(title);
+        notification.setMessage(message);
+        notification.setNotificationType(type);
+        notification.setCreatedAt(LocalDateTime.now());
+        notification.setIsRead(false);
+        if (link != null) notification.setMetadata(link);
+        if (petition != null) notification.setRelatedPetition(petition);
+        if (postulation != null) notification.setRelatedPostulation(postulation);
+        notificationRepository.save(notification);
+    }
     /**
-     * Notifica masivamente a proveedores filtrando por Profesión y Ciudad.
+     * Notifica a los proveedores que coinciden con la profesión y ciudad de una nueva petición.
      */
     @Transactional
     public void notifyProvidersByProfessionAndCity(Integer idProfession, Integer idCity, Petition petition) {
-        // 1. Buscamos a los interesados
-        List<Provider> providers = providerRepository.findByProfessionAndCity(idProfession, idCity);
+        // Usamos el repositorio de proveedores para buscar los candidatos
+        List<Provider> candidates = providerRepository.findByProfessionAndCity(idProfession, idCity);
 
-        // 2. Filtramos al propio dueño
-        Integer ownerId = petition.getCustomer().getUser().getIdUser();
+        for (Provider provider : candidates) {
+            // Evitar notificar al mismo usuario si es quien creó la petición (caso raro pero posible)
+            if (!provider.getUser().getIdUser().equals(petition.getCustomer().getUser().getIdUser())) {
 
-        // 3. Enviamos masivamente
-        for (Provider provider : providers) {
-            if (!provider.getUser().getIdUser().equals(ownerId)) {
-                String professionName = petition.getProfession().getName();
-                String cityName = petition.getCity() != null ? petition.getCity().getName() : "tu zona";
+                String title = "Nueva Oportunidad Laboral";
+                String message = "Se busca " + petition.getProfession().getName() + " en " + petition.getCity().getName();
+                String link = "/petition/" + petition.getIdPetition();
 
-                sendNotification(
+                // Reutilizamos el método privado para crear la notificación
+                createNotification(
                         provider.getUser(),
-                        "¡Oportunidad en " + cityName + "!",
-                        "Se busca " + professionName + " para: " + petition.getDescription(),
-                        "OPPORTUNITY",
+                        title,
+                        message,
+                        "INFO",
+                        link,
                         petition,
-                        null);
+                        null
+                );
             }
         }
-    }
-
-    /**
-     * Convierte Entidad a DTO.
-     */
-    private NotificationResponse mapToResponse(Notification n) {
-        return NotificationResponse.builder()
-                .id(n.getId())
-                .title(n.getTitle())
-                .message(n.getMessage())
-                .type(n.getNotificationType())
-                .isRead(n.getIsRead())
-                .createdAt(n.getCreatedAt())
-                .relatedPetitionId(n.getRelatedPetition() != null ? n.getRelatedPetition().getIdPetition() : null)
-                .relatedPostulationId(
-                        n.getRelatedPostulation() != null ? n.getRelatedPostulation().getIdPostulation() : null)
-                .build();
     }
 }

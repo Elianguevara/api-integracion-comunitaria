@@ -9,20 +9,30 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface PetitionRepository extends JpaRepository<Petition, Integer> {
 
-    // ESTO YA LO TIENES (Lo usaremos para "Mis Peticiones")
+    /**
+     * Recupera las peticiones de un cliente específico.
+     * Se usa en el Dashboard del Cliente ("Mis Peticiones").
+     */
     Page<Petition> findByCustomer_IdCustomer(Integer idCustomer, Pageable pageable);
 
-    // ESTO YA LO TIENES
+    /**
+     * Recupera peticiones por el nombre del estado (ej: "PUBLICADA").
+     */
     Page<Petition> findByState_Name(String stateName, Pageable pageable);
 
-    // ESTO YA LO TIENES
-    Page<Petition> findByTypePetition_IdTypePetitionAndState_Name(Integer idType, String stateName, Pageable pageable);
-
-    // --- AGREGAR ESTE NUEVO (Para el Feed Inteligente) ---
     /**
-     * Busca peticiones por estado, excluyendo las del usuario actual.
+     * FEED INTELIGENTE (Crucial para Proveedores):
+     * Busca peticiones activas ("PUBLICADA"), pero EXCLUYE las que creó el propio usuario
+     * que está consultando (para que un electricista no vea su propia solicitud de arreglo de luz).
+     *
+     * @param stateName Nombre del estado (ej: "PUBLICADA")
+     * @param userId ID del usuario a excluir (el que está logueado)
      */
     Page<Petition> findByState_NameAndCustomer_User_IdUserNot(String stateName, Integer userId, Pageable pageable);
 
+    /**
+     * Recupera todas las peticiones que no han sido borradas lógicamente.
+     * Útil para administración o auditoría.
+     */
     Page<Petition> findByIsDeletedFalse(Pageable pageable);
 }

@@ -6,22 +6,22 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface PostulationRepository extends JpaRepository<Postulation, Integer> {
 
-    // Ver si este proveedor ya se postuló a esta petición (Validación única)
-    Optional<Postulation> findByPetition_IdPetitionAndProvider_IdProvider(Integer idPetition, Integer idProvider);
+    boolean existsByPetition_IdPetitionAndProvider_IdProvider(Integer idPetition, Integer idProvider);
 
-    // 1. Para el Cliente: Ver quién se postuló a su petición (Paginado)
     Page<Postulation> findByPetition_IdPetition(Integer idPetition, Pageable pageable);
 
-    // 2. Para el Proveedor: Ver su historial de postulaciones (Paginado)
-    // Esto faltaba en tu Service, es muy útil para el perfil del proveedor.
+    List<Postulation> findByPetition_IdPetition(Integer idPetition);
+
+    List<Postulation> findByPetition_IdPetitionAndIdPostulationNot(Integer idPetition, Integer idPostulationWinner);
+
     Page<Postulation> findByProvider_IdProvider(Integer idProvider, Pageable pageable);
 
-    // Validación extra
-    boolean existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(Integer idCustomer,
-            Integer idProvider);
+    // --- EL MÉTODO QUE FALTABA ---
+    // Verifica si un proveedor ya ganó un trabajo con este cliente
+    boolean existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(Integer idCustomer, Integer idProvider);
 }

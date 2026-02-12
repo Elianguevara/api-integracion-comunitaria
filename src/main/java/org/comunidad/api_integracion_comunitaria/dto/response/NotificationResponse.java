@@ -10,9 +10,8 @@ public class NotificationResponse {
     private Integer id;
     private String title;
     private String message;
-    private String type; // Ej: "INFO", "SUCCESS", "WARNING"
-    private boolean isRead;
+    private String type;
+    private Boolean isRead;
     private LocalDateTime createdAt;
-    private Integer relatedPostulationId;
-    private Integer relatedPetitionId;
+    private String link;
 }

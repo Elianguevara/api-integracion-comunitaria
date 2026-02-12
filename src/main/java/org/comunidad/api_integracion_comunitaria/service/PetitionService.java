@@ -15,10 +15,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Objects;
 
 /**
- * Servicio encargado de la gestión del ciclo de vida de las Peticiones
- * (Trabajos solicitados).
+ * Servicio encargado de la gestión del ciclo de vida de las Peticiones (Trabajos solicitados).
+ * Maneja la creación, consulta, visualización y eliminación lógica de las solicitudes.
  */
 @Service
 @RequiredArgsConstructor
@@ -37,9 +38,10 @@ public class PetitionService {
         /**
          * Crea una nueva petición de servicio en el sistema.
          *
-         * @param email Email del usuario autenticado.
+         * @param email   Email del usuario autenticado (extraído del token JWT).
          * @param request DTO con los datos del formulario de creación.
          * @return PetitionResponse DTO con los datos de la petición creada.
+         * @throws RuntimeException Si el usuario no existe, no es Cliente o faltan datos maestros.
          */
         @Transactional
         public PetitionResponse createPetition(String email, PetitionRequest request) {
@@ -92,7 +94,12 @@ public class PetitionService {
 
         /**
          * FEED PÚBLICO:
-         * Recupera peticiones 'PUBLICADA' excluyendo las creadas por el usuario que consulta.
+         * Recupera peticiones en estado 'PUBLICADA', excluyendo las creadas por el usuario que consulta.
+         * Ideal para que los proveedores busquen trabajo.
+         *
+         * @param email    Email del usuario que consulta (para excluir sus propias peticiones).
+         * @param pageable Configuración de paginación.
+         * @return Página de PetitionResponse.
          */
         @Transactional(readOnly = true)
         public Page<PetitionResponse> getFeed(String email, Pageable pageable) {
@@ -105,7 +112,12 @@ public class PetitionService {
 
         /**
          * MIS PETICIONES:
-         * Recupera el historial completo de peticiones del usuario logueado (como Cliente).
+         * Recupera el historial completo de peticiones del usuario logueado (rol Cliente).
+         * Incluye peticiones activas, finalizadas o canceladas.
+         *
+         * @param email    Email del usuario autenticado.
+         * @param pageable Configuración de paginación.
+         * @return Página de PetitionResponse.
          */
         @Transactional(readOnly = true)
         public Page<PetitionResponse> getMyPetitions(String email, Pageable pageable) {
@@ -120,7 +132,59 @@ public class PetitionService {
         }
 
         /**
-         * Mapper de Entidad a DTO.
+         * Obtiene el detalle de una petición específica por su ID.
+         *
+         * @param id    ID de la petición.
+         * @param email Email del usuario que consulta (para validaciones futuras o auditoría).
+         * @return PetitionResponse DTO con el detalle.
+         * @throws RuntimeException Si la petición no existe.
+         */
+        @Transactional(readOnly = true)
+        public PetitionResponse getPetitionById(Long id, String email) {
+                Petition petition = petitionRepository.findById(Math.toIntExact(id))
+                        .orElseThrow(() -> new RuntimeException("Solicitud no encontrada con ID: " + id));
+
+                // Aquí podrías agregar lógica extra: ¿Es una petición privada? ¿El usuario tiene permiso?
+                // Por ahora, asumimos que si existe, se puede ver.
+                return mapToResponse(petition);
+        }
+
+        /**
+         * Elimina (lógicamente) una petición del sistema.
+         * Solo el dueño de la petición (el Cliente que la creó) puede eliminarla.
+         * Cambia el estado a 'CANCELADA' y marca isDeleted = true.
+         *
+         * @param id    ID de la petición a eliminar.
+         * @param email Email del usuario que intenta eliminar.
+         * @throws RuntimeException Si la petición no existe, el usuario no existe, o no es el dueño.
+         */
+        @Transactional
+        public void deletePetition(Long id, String email) {
+                Petition petition = petitionRepository.findById(Math.toIntExact(id))
+                        .orElseThrow(() -> new RuntimeException("Solicitud no encontrada"));
+
+                User user = userRepository.findByEmail(email)
+                        .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+                // Validación de Seguridad: Solo el dueño puede borrarla
+                if (!Objects.equals(petition.getCustomer().getUser().getIdUser(), user.getIdUser())) {
+                        throw new RuntimeException("No tienes permiso para eliminar esta solicitud. No eres el propietario.");
+                }
+
+                // Borrado Lógico (Soft Delete)
+                petition.setIsDeleted(true);
+                petition.setState(petitionStateRepository.findByName("CANCELADA")
+                        .orElseThrow(() -> new RuntimeException("Estado 'CANCELADA' no configurado en BD.")));
+
+                petitionRepository.save(petition);
+                log.info("Petición ID {} eliminada lógicamente por el usuario {}", id, email);
+        }
+
+        /**
+         * Mapper auxiliar para convertir Entidad Petition a DTO PetitionResponse.
+         *
+         * @param petition Entidad de base de datos.
+         * @return DTO para el frontend.
          */
         private PetitionResponse mapToResponse(Petition petition) {
                 String cityName = (petition.getCity() != null) ? petition.getCity().getName() : "Ubicación no especificada";

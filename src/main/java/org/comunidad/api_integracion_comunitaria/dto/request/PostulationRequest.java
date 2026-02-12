@@ -1,17 +1,20 @@
 package org.comunidad.api_integracion_comunitaria.dto.request;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
 public class PostulationRequest {
-    @NotNull(message = "Debes indicar a qué petición te postulas")
+
+    @NotNull(message = "El ID de la petición es obligatorio")
     private Integer idPetition;
 
-    @NotNull(message = "Debes escribir una propuesta")
-    @Size(min = 20, message = "La propuesta debe ser detallada (mínimo 20 caracteres)")
-    private String proposal;
+    @NotBlank(message = "Debes incluir una descripción o mensaje")
+    private String description;
 
-    // Si manejas presupuesto, agrégalo aquí (ej: private Double amount;)
+    @NotNull(message = "El presupuesto es obligatorio")
+    @Min(value = 1, message = "El presupuesto debe ser mayor a 0")
+    private Double budget;
 }
