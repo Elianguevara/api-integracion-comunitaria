@@ -15,8 +15,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Controlador REST para gestionar las Peticiones de trabajo.
- * Expone endpoints para crear, listar, ver detalle y eliminar solicitudes.
+ * Controlador REST para gestionar las Peticiones de trabajo en el sistema.
+ * <p>
+ * Proporciona endpoints para que los Clientes creen y administren sus solicitudes,
+ * y para que los Proveedores visualicen las oportunidades disponibles en el feed.
+ * </p>
+ * * @author Elian Guevara
+ * @version 1.1
  */
 @RestController
 @RequestMapping("/api/petitions")
@@ -26,10 +31,10 @@ public class PetitionController {
     private final PetitionService petitionService;
 
     /**
-     * Crea una nueva solicitud de trabajo.
+     * Crea una nueva solicitud de trabajo asociada al Cliente autenticado.
      *
-     * @param request Datos del formulario validados.
-     * @return 200 OK con la petición creada.
+     * @param request Objeto DTO que contiene los detalles de la petición (profesión, ciudad, descripción, etc.).
+     * @return {@link ResponseEntity} con la {@link PetitionResponse} creada y estado 200 OK.
      */
     @PostMapping
     public ResponseEntity<PetitionResponse> createPetition(@Valid @RequestBody PetitionRequest request) {
@@ -38,11 +43,13 @@ public class PetitionController {
     }
 
     /**
-     * Obtiene el Feed de trabajos disponibles para Proveedores.
-     * Excluye las peticiones creadas por el propio usuario.
+     * Obtiene el feed público de solicitudes de trabajo disponibles para los Proveedores.
+     * <p>
+     * Filtra automáticamente las peticiones para que el usuario autenticado no vea sus propias solicitudes.
+     * </p>
      *
-     * @param pageable Configuración de paginación (por defecto ordena por fecha descendente).
-     * @return Página de solicitudes.
+     * @param pageable Configuración de paginación y ordenamiento (por defecto: página 0, tamaño 10, ordenado por fecha descendente).
+     * @return {@link ResponseEntity} con una página de {@link PetitionResponse}.
      */
     @GetMapping("/feed")
     public ResponseEntity<Page<PetitionResponse>> getFeed(
@@ -52,10 +59,10 @@ public class PetitionController {
     }
 
     /**
-     * Obtiene el historial de solicitudes creadas por el Cliente autenticado.
+     * Obtiene el historial de solicitudes creadas exclusivamente por el Cliente autenticado.
      *
      * @param pageable Configuración de paginación.
-     * @return Página de mis solicitudes.
+     * @return {@link ResponseEntity} con la página de solicitudes pertenecientes al cliente.
      */
     @GetMapping("/my")
     public ResponseEntity<Page<PetitionResponse>> getMyPetitions(
@@ -65,10 +72,10 @@ public class PetitionController {
     }
 
     /**
-     * Obtiene el detalle de una solicitud específica por su ID.
+     * Recupera la información detallada de una solicitud específica por su identificador.
      *
-     * @param id ID de la petición.
-     * @return 200 OK con el detalle de la petición.
+     * @param id Identificador único de la petición.
+     * @return {@link ResponseEntity} con los datos de la petición si se encuentra disponible.
      */
     @GetMapping("/{id}")
     public ResponseEntity<PetitionResponse> getPetitionById(@PathVariable Long id) {
@@ -77,16 +84,46 @@ public class PetitionController {
     }
 
     /**
-     * Elimina (Cancela) una solicitud específica.
-     * Requiere que el usuario autenticado sea el creador de la solicitud.
+     * Elimina o cancela una solicitud de trabajo del sistema.
+     * <p>
+     * Esta operación solo puede ser realizada por el Cliente que creó originalmente la solicitud.
+     * </p>
      *
-     * @param id ID de la petición a eliminar.
-     * @return 204 No Content si la operación fue exitosa.
+     * @param id Identificador de la petición a eliminar.
+     * @return {@link ResponseEntity} con estado 204 No Content tras la eliminación exitosa.
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deletePetition(@PathVariable Long id) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         petitionService.deletePetition(id, auth.getName());
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Finaliza oficialmente una solicitud de trabajo una vez completado el servicio.
+     * <p>
+     * Cambia el estado de la petición a 'FINALIZADA'. Esta acción es crucial para el flujo
+     * de estados y permite habilitar el sistema de calificaciones posterior.
+     * </p>
+     *
+     * @param id Identificador de la petición a finalizar.
+     * @return {@link ResponseEntity} con la {@link PetitionResponse} actualizada y estado 200 OK.
+     */
+    @PutMapping("/{id}/complete")
+    public ResponseEntity<PetitionResponse> completePetition(@PathVariable Long id) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return ResponseEntity.ok(petitionService.completePetition(id, auth.getName()));
+    }
+
+    /**
+     * Reactiva una solicitud de trabajo específica.
+     *
+     * @param id ID de la petición.
+     * @return 200 OK con la petición reactivada.
+     */
+    @PatchMapping("/{id}/reactivate")
+    public ResponseEntity<PetitionResponse> reactivatePetition(@PathVariable Long id) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return ResponseEntity.ok(petitionService.reactivatePetition(id, auth.getName()));
     }
 }

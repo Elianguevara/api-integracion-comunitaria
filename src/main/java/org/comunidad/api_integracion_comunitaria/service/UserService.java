@@ -44,6 +44,10 @@ public class UserService {
         if (providerOpt.isPresent()) {
             Provider p = providerOpt.get();
             response.role("PROVIDER");
+
+            // --- NUEVA LÍNEA: Guardamos el ID real del Proveedor ---
+            response.providerId(p.getIdProvider());
+
             response.description(p.getDescription());
 
             if (p.getProfession() != null) {
@@ -63,6 +67,10 @@ public class UserService {
         } else if (customerOpt.isPresent()) {
             Customer c = customerOpt.get();
             response.role("CUSTOMER");
+
+            // --- NUEVA LÍNEA: Guardamos el ID real del Cliente ---
+            response.customerId(c.getIdCustomer());
+
             response.phone(c.getPhone());
 
             // Formatear dirección para Cliente

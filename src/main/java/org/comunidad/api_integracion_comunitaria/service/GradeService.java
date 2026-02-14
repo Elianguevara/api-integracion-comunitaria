@@ -12,6 +12,9 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 /**
  * Servicio encargado de la gestión de Calificaciones y Reseñas (Reviews).
  * <p>
@@ -41,25 +44,30 @@ public class GradeService {
          *
          * @param request DTO con la puntuación (1-5), comentario e ID del proveedor.
          * @throws RuntimeException Si no son el cliente, no existe el proveedor o no
-         *                          han trabajado juntos.
+         * han trabajado juntos.
          */
         @Transactional
         public void rateProvider(RateRequest request) {
                 User user = getAuthenticatedUser();
                 Customer customer = customerRepository.findByUser_IdUser(user.getIdUser())
-                                .orElseThrow(() -> new RuntimeException("No tienes perfil de Cliente activo."));
+                        .orElseThrow(() -> new RuntimeException("No tienes perfil de Cliente activo."));
 
                 Provider provider = providerRepository.findById(request.getTargetId())
-                                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado."));
+                        .orElseThrow(() -> new RuntimeException("Proveedor no encontrado."));
+
+                // VALIDACIÓN EXTRA: Verificar si ya lo calificó previamente para evitar duplicados
+                if (gradeProviderRepository.existsByCustomer_IdCustomerAndProvider_IdProvider(customer.getIdCustomer(), provider.getIdProvider())) {
+                        throw new RuntimeException("Ya has calificado a este proveedor anteriormente.");
+                }
 
                 // VALIDACIÓN DE SEGURIDAD: Verificar historial laboral
                 boolean hasWorkedTogether = postulationRepository
-                                .existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(
-                                                customer.getIdCustomer(), provider.getIdProvider());
+                        .existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(
+                                customer.getIdCustomer(), provider.getIdProvider());
 
                 if (!hasWorkedTogether) {
                         throw new RuntimeException(
-                                        "No puedes calificar a este proveedor porque no has completado ningún trabajo adjudicado con él.");
+                                "No puedes calificar a este proveedor porque no has completado ningún trabajo adjudicado con él.");
                 }
 
                 // Crear calificación
@@ -69,8 +77,7 @@ public class GradeService {
                 review.setRating(request.getRating());
                 review.setComment(request.getComment());
                 review.setIsVisible(true);
-                // Aquí podrías agregar fecha de creación si tu entidad lo soporta
-                // explícitamente
+                // Si la entidad tiene auditoría o fechas, puedes setearlo aquí
 
                 gradeProviderRepository.save(review);
         }
@@ -88,19 +95,19 @@ public class GradeService {
         public void rateCustomer(RateRequest request) {
                 User user = getAuthenticatedUser();
                 Provider provider = providerRepository.findByUser_IdUser(user.getIdUser())
-                                .orElseThrow(() -> new RuntimeException("No tienes perfil de Proveedor activo."));
+                        .orElseThrow(() -> new RuntimeException("No tienes perfil de Proveedor activo."));
 
                 Customer customer = customerRepository.findById(request.getTargetId())
-                                .orElseThrow(() -> new RuntimeException("Cliente no encontrado."));
+                        .orElseThrow(() -> new RuntimeException("Cliente no encontrado."));
 
                 // VALIDACIÓN: ¿Trabajaron juntos?
                 boolean hasWorkedTogether = postulationRepository
-                                .existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(
-                                                customer.getIdCustomer(), provider.getIdProvider());
+                        .existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(
+                                customer.getIdCustomer(), provider.getIdProvider());
 
                 if (!hasWorkedTogether) {
                         throw new RuntimeException(
-                                        "No puedes calificar a este cliente sin haberle realizado un trabajo adjudicado.");
+                                "No puedes calificar a este cliente sin haberle realizado un trabajo adjudicado.");
                 }
 
                 GradeCustomer review = new GradeCustomer();
@@ -124,17 +131,30 @@ public class GradeService {
          * @param pageable   Configuración de la página (tamaño, número de página).
          * @return Una página (Page) de objetos {@link ReviewResponse}.
          */
+        @Transactional(readOnly = true) // <--- ESTA ES LA ANOTACIÓN QUE SOLUCIONA EL ERROR LAZYINITIALIZATION
         public Page<ReviewResponse> getProviderReviews(Integer providerId, Pageable pageable) {
                 return gradeProviderRepository.findByProvider_IdProvider(providerId, pageable)
-                                .map(r -> ReviewResponse.builder()
-                                                .idReview(r.getIdGradeProvider())
-                                                // Solo mostramos el nombre de pila por privacidad básica
-                                                .reviewerName(r.getCustomer().getUser().getName())
-                                                .rating(r.getRating())
-                                                .comment(r.getComment())
-                                                // .date(r.getDateCreate()) // Descomentar si la entidad tiene fecha
-                                                // accesible
-                                                .build());
+                        .map(r -> ReviewResponse.builder()
+                                .idReview(r.getIdGradeProvider())
+                                // Solo mostramos el nombre de pila por privacidad básica
+                                .reviewerName(r.getCustomer().getUser().getName())
+                                .rating(r.getRating())
+                                .comment(r.getComment())
+                                // Formateamos la fecha si existe, o ponemos la actual como fallback
+                                .date(LocalDateTime.parse(r.getDateCreate() != null ? r.getDateCreate().toString() : LocalDate.now().toString()))
+                                .build());
+        }
+
+        /**
+         * Verifica si el cliente autenticado ya calificó a un proveedor específico.
+         */
+        @Transactional(readOnly = true)
+        public boolean hasCustomerRatedProvider(Integer providerId) {
+                User user = getAuthenticatedUser();
+                return customerRepository.findByUser_IdUser(user.getIdUser())
+                        .map(customer -> gradeProviderRepository.existsByCustomer_IdCustomerAndProvider_IdProvider(
+                                customer.getIdCustomer(), providerId))
+                        .orElse(false);
         }
 
         /**
@@ -142,8 +162,8 @@ public class GradeService {
          */
         private User getAuthenticatedUser() {
                 String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
-                                .getUsername();
+                        .getUsername();
                 return userRepository.findByEmail(email)
-                                .orElseThrow(() -> new RuntimeException("Error de sesión: Usuario no encontrado."));
+                        .orElseThrow(() -> new RuntimeException("Error de sesión: Usuario no encontrado."));
         }
 }

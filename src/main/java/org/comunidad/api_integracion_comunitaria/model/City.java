@@ -1,5 +1,6 @@
 package org.comunidad.api_integracion_comunitaria.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore; // <-- NUEVA IMPORTACIÓN
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.ToString;
@@ -23,6 +24,7 @@ public class City {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_department")
     @ToString.Exclude
+    @JsonIgnore // <-- NUEVA ANOTACIÓN: Evita el error de serialización JSON "no session"
     private Department department;
 
     @Column(name = "date_create")

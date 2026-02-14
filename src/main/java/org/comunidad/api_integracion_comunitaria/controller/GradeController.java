@@ -65,4 +65,12 @@ public class GradeController {
             @PageableDefault(page = 0, size = 5, sort = "idGradeProvider", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(gradeService.getProviderReviews(providerId, pageable));
     }
+
+    /**
+     * Verifica si el cliente autenticado ya ha calificado a este proveedor.
+     */
+    @GetMapping("/check-rated/{providerId}")
+    public ResponseEntity<Boolean> checkIfRated(@PathVariable Integer providerId) {
+        return ResponseEntity.ok(gradeService.hasCustomerRatedProvider(providerId));
+    }
 }

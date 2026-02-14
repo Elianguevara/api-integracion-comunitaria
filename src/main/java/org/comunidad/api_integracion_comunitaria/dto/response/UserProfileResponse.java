@@ -10,6 +10,12 @@ import java.util.List;
 @Builder
 public class UserProfileResponse {
     private Integer id;
+
+    // --- NUEVOS CAMPOS ---
+    private Integer providerId;
+    private Integer customerId;
+    // ---------------------
+
     private String name;
     private String lastname;
     private String email;

@@ -106,19 +106,17 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Orígenes permitidos (Frontend de desarrollo)
-        // Ajustar puertos según necesidad (React suele ser 3000 o 5173 con Vite)
+        // Orígenes permitidos
         configuration.setAllowedOrigins(List.of("http://localhost:3000", "http://localhost:5173"));
 
-        // Métodos HTTP permitidos
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        // CORRECCIÓN: Añadir "PATCH" a la lista de métodos permitidos
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
 
-        // Cabeceras permitidas
-        // Authorization: Para enviar el Token Bearer
-        // Content-Type: Para enviar JSON o archivos (Multipart)
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        // CORRECCIÓN: Permitir todas las cabeceras para evitar bloqueos en preflight
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "Accept"));
 
-        // Registrar esta configuración para todas las rutas (/**)
+        configuration.setAllowCredentials(true);
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;

@@ -5,6 +5,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,24 @@ public class JwtService {
 
     @Value("${security.jwt.expiration-time}")
     private long jwtExpiration;
+    private Key signingKey;
+
+    @PostConstruct
+    void validateJwtConfiguration() {
+        if (secretKey == null || secretKey.isBlank()) {
+            throw new IllegalStateException("JWT secret key is missing. Set the JWT_SECRET_KEY environment variable.");
+        }
+        if (jwtExpiration <= 0) {
+            throw new IllegalStateException("security.jwt.expiration-time must be greater than 0.");
+        }
+
+        try {
+            byte[] keyBytes = Decoders.BASE64.decode(secretKey.trim());
+            this.signingKey = Keys.hmacShaKeyFor(keyBytes);
+        } catch (Exception ex) {
+            throw new IllegalStateException("JWT secret key must be a valid Base64-encoded key with sufficient length for HS256.", ex);
+        }
+    }
 
     // 1. Extraer el nombre de usuario (email) del token
     public String extractUsername(String token) {
@@ -80,7 +99,6 @@ public class JwtService {
     }
 
     private Key getSignInKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
-        return Keys.hmacShaKeyFor(keyBytes);
+        return signingKey;
     }
 }
