@@ -56,7 +56,7 @@ public class GradeController {
      *
      * @param providerId ID del proveedor.
      * @param pageable   Configuración automática de paginación (Por defecto: 5
-     *                   elementos, ordenado por ID descendente).
+     * elementos, ordenado por ID descendente).
      * @return Página de reseñas.
      */
     @GetMapping("/provider/{providerId}")
@@ -67,10 +67,16 @@ public class GradeController {
     }
 
     /**
-     * Verifica si el cliente autenticado ya ha calificado a este proveedor.
+     * Verifica si el cliente autenticado ya ha calificado a este proveedor en un trabajo específico.
+     * Ejemplo: GET /api/grades/check-rated/123?petitionId=45
+     *
+     * @param providerId ID del proveedor evaluado.
+     * @param petitionId ID de la petición (trabajo) que se está verificando.
      */
     @GetMapping("/check-rated/{providerId}")
-    public ResponseEntity<Boolean> checkIfRated(@PathVariable Integer providerId) {
-        return ResponseEntity.ok(gradeService.hasCustomerRatedProvider(providerId));
+    public ResponseEntity<Boolean> checkIfRated(
+            @PathVariable Integer providerId,
+            @RequestParam Integer petitionId) {
+        return ResponseEntity.ok(gradeService.hasCustomerRatedProvider(providerId, petitionId));
     }
 }

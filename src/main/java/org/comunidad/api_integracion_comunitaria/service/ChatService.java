@@ -5,8 +5,6 @@ import org.comunidad.api_integracion_comunitaria.dto.response.ConversationRespon
 import org.comunidad.api_integracion_comunitaria.dto.response.MessageResponse;
 import org.comunidad.api_integracion_comunitaria.model.*;
 import org.comunidad.api_integracion_comunitaria.repository.*;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -14,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,58 +24,49 @@ public class ChatService {
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
     private final PetitionRepository petitionRepository;
+    private final UserRoleRepository userRoleRepository;
 
-    // --- Métodos Privados Auxiliares ---
     private User getAuthenticatedUser() {
-        String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
-                .getUsername();
+        String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUsername();
         return userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
     }
 
-    // --- 1. Crear o Recuperar Chat ---
     @Transactional
     public ConversationResponse createOrGetConversation(Integer petitionId, Integer targetUserId) {
         User currentUser = getAuthenticatedUser();
         User targetUser = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new RuntimeException("Usuario destino no encontrado"));
-
         Petition petition = petitionRepository.findById(petitionId)
                 .orElseThrow(() -> new RuntimeException("Petición no encontrada"));
 
-        // Verificar si ya existe el chat para no duplicar
-        return conversationRepository.findExistingConversation(petitionId, currentUser.getIdUser(), targetUserId)
-                .map(c -> mapToConversationResponse(c, currentUser.getIdUser()))
+        Conversation conversation = conversationRepository.findExistingConversation(petitionId, currentUser.getIdUser(), targetUserId)
                 .orElseGet(() -> {
-                    // Si no existe, creamos uno nuevo
-                    Conversation conversation = new Conversation();
-                    conversation.setPetition(petition);
-                    conversation.setCreatedAt(LocalDateTime.now());
-                    Conversation savedConv = conversationRepository.save(conversation);
+                    Conversation newConv = new Conversation();
+                    newConv.setPetition(petition);
+                    newConv.setCreatedAt(LocalDateTime.now());
+                    Conversation savedConv = conversationRepository.save(newConv);
 
-                    // Agregamos participante 1 (Yo)
                     ConversationParticipant p1 = new ConversationParticipant();
                     p1.setConversation(savedConv);
                     p1.setUser(currentUser);
                     participantRepository.save(p1);
 
-                    // Agregamos participante 2 (El otro)
                     ConversationParticipant p2 = new ConversationParticipant();
                     p2.setConversation(savedConv);
                     p2.setUser(targetUser);
                     participantRepository.save(p2);
 
-                    return mapToConversationResponse(savedConv, currentUser.getIdUser());
+                    return savedConv;
                 });
+
+        return mapToConversationResponse(conversation, currentUser.getIdUser());
     }
 
-    // --- 2. Enviar Mensaje ---
     @Transactional
     public MessageResponse sendMessage(Long conversationId, String content) {
         User currentUser = getAuthenticatedUser();
 
-        // Seguridad: Verificar que el usuario pertenece al chat
-        if (!participantRepository.existsByConversation_IdConversationAndUser_IdUser(conversationId,
-                currentUser.getIdUser())) {
+        if (!participantRepository.existsByConversation_IdConversationAndUser_IdUser(conversationId, currentUser.getIdUser())) {
             throw new RuntimeException("No tienes permiso para enviar mensajes en esta conversación.");
         }
 
@@ -92,13 +82,10 @@ public class ChatService {
 
         Message savedMsg = messageRepository.save(message);
 
-        // TODO: Aquí se debería integrar NotificationService para avisar al otro
-        // usuario
-
         return mapToMessageResponse(savedMsg, currentUser.getIdUser());
     }
 
-    // --- 3. Listar mis chats ---
+    @Transactional(readOnly = true)
     public List<ConversationResponse> getUserConversations() {
         User currentUser = getAuthenticatedUser();
         return conversationRepository.findByUserId(currentUser.getIdUser()).stream()
@@ -106,32 +93,56 @@ public class ChatService {
                 .collect(Collectors.toList());
     }
 
-    // --- 4. Ver historial de mensajes (PAGINADO) ---
-    // Actualizado para recibir Pageable y devolver Page<MessageResponse>
-    public Page<MessageResponse> getConversationMessages(Long conversationId, Pageable pageable) {
+    @Transactional
+    public List<MessageResponse> getConversationMessages(Long conversationId) {
         User currentUser = getAuthenticatedUser();
 
-        // Seguridad: Verificar si soy participante
-        if (!participantRepository.existsByConversation_IdConversationAndUser_IdUser(conversationId,
-                currentUser.getIdUser())) {
+        if (!participantRepository.existsByConversation_IdConversationAndUser_IdUser(conversationId, currentUser.getIdUser())) {
             throw new RuntimeException("Acceso denegado a esta conversación.");
         }
 
-        // Llamada al repositorio paginado y mapeo a DTO
-        return messageRepository.findByConversation_IdConversation(conversationId, pageable)
-                .map(m -> mapToMessageResponse(m, currentUser.getIdUser()));
+        return messageRepository.findByConversation_IdConversationOrderByCreatedAtAsc(conversationId).stream()
+                .map(m -> mapToMessageResponse(m, currentUser.getIdUser()))
+                .collect(Collectors.toList());
     }
 
     // --- Mappers ---
     private ConversationResponse mapToConversationResponse(Conversation c, Integer myUserId) {
-        // Nota: Para obtener el nombre real del "otro" usuario, se requeriría una
-        // consulta extra
-        // o mejorar la entidad Conversation. Por ahora se mantiene la lógica original.
+        // 1. Buscar al otro participante
+        User otherUser = participantRepository.findFirstByConversation_IdConversationAndUser_IdUserNot(c.getIdConversation(), myUserId)
+                .map(ConversationParticipant::getUser)
+                .orElse(null);
+
+        // 2. Buscar el rol del otro participante usando el método exacto de tu repositorio
+        String roleName = "";
+        if (otherUser != null) {
+            // AQUÍ ESTÁ EL CAMBIO: Usamos findByUser_IdUser pasándole el ID
+            List<UserRole> roles = userRoleRepository.findByUser_IdUser(otherUser.getIdUser());
+            if (roles != null && !roles.isEmpty()) {
+                roleName = roles.get(0).getRole().getName();
+            }
+        }
+
+        // 3. Obtener datos del último mensaje
+        Optional<Message> lastMessageOpt = messageRepository.findTopByConversation_IdConversationOrderByCreatedAtDesc(c.getIdConversation());
+
+        // 4. Contar no leídos
+        Long unreadCount = messageRepository.countByConversation_IdConversationAndSender_IdUserNotAndIsReadFalse(c.getIdConversation(), myUserId);
+
+        // 5. Calcular dinámicamente la última actividad
+        LocalDateTime lastActivity = lastMessageOpt.map(Message::getCreatedAt).orElse(c.getCreatedAt());
+
         return ConversationResponse.builder()
                 .idConversation(c.getIdConversation())
                 .petitionId(c.getPetition().getIdPetition())
                 .petitionTitle(c.getPetition().getDescription())
-                .otherUserName("Usuario del Chat")
+                .otherParticipantId(otherUser != null ? otherUser.getIdUser() : null)
+                .otherParticipantName(otherUser != null ? otherUser.getName() : "Usuario Desconocido")
+                .otherParticipantRole(roleName)
+                .otherParticipantImage(otherUser != null ? otherUser.getProfileImage() : null)
+                .lastMessage(lastMessageOpt.map(Message::getContent).orElse(""))
+                .updatedAt(lastActivity)
+                .unreadCount(unreadCount)
                 .build();
     }
 
@@ -139,7 +150,7 @@ public class ChatService {
         return MessageResponse.builder()
                 .idMessage(m.getIdMessage())
                 .content(m.getContent())
-                .createdAt(m.getCreatedAt())
+                .sentAt(m.getCreatedAt())
                 .senderId(m.getSender().getIdUser())
                 .senderName(m.getSender().getName())
                 .isMine(m.getSender().getIdUser().equals(myUserId))

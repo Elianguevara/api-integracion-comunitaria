@@ -2,12 +2,16 @@ package org.comunidad.api_integracion_comunitaria.service;
 
 import lombok.RequiredArgsConstructor;
 import org.comunidad.api_integracion_comunitaria.dto.request.ProviderProfileRequest;
+import org.comunidad.api_integracion_comunitaria.dto.response.ProviderPublicProfileResponse;
 import org.comunidad.api_integracion_comunitaria.model.*;
 import org.comunidad.api_integracion_comunitaria.repository.*;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -18,6 +22,9 @@ public class ProviderService {
     private final ProfessionRepository professionRepository;
     private final CityRepository cityRepository;
     private final ProviderCityRepository providerCityRepository;
+
+    // NUEVO: Repositorio para obtener las calificaciones del proveedor
+    private final GradeProviderRepository gradeProviderRepository;
 
     @Transactional
     public void updateProfile(ProviderProfileRequest request) {
@@ -62,5 +69,48 @@ public class ProviderService {
                 providerCityRepository.save(providerCity);
             }
         }
+    }
+
+    // --- NUEVO MÉTODO: Obtener Perfil Público del Proveedor ---
+    @Transactional(readOnly = true)
+    public ProviderPublicProfileResponse getPublicProfile(Integer idProvider) {
+        // 1. Buscamos el proveedor
+        Provider provider = providerRepository.findById(idProvider)
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado."));
+
+        User user = provider.getUser();
+
+        // 2. Extraemos los nombres de las ciudades donde trabaja
+        List<String> cities = provider.getProviderCities().stream()
+                .map(pc -> pc.getCity().getName())
+                .collect(Collectors.toList());
+
+        // 3. Extraemos la profesión principal (en una lista por flexibilidad futura)
+        List<String> professions = provider.getProfession() != null
+                ? List.of(provider.getProfession().getName())
+                : List.of();
+
+        // 4. Calculamos Calificaciones (Promedio y Total)
+        Double avg = gradeProviderRepository.getAverageRating(idProvider);
+        Double finalRating = avg != null ? Math.round(avg * 10.0) / 10.0 : 0.0;
+
+        Integer totalReviews = gradeProviderRepository.countByProvider_IdProvider(idProvider);
+        if (totalReviews == null) {
+            totalReviews = 0;
+        }
+
+        // 5. Construimos el DTO de respuesta
+        return ProviderPublicProfileResponse.builder()
+                .idProvider(provider.getIdProvider())
+                .userId(user.getIdUser())
+                .name(user.getName())
+                .lastname(user.getLastname())
+                .profileImage(user.getProfileImage())
+                .biography(provider.getDescription())
+                .professions(professions)
+                .cities(cities)
+                .rating(finalRating)
+                .totalReviews(totalReviews)
+                .build();
     }
 }

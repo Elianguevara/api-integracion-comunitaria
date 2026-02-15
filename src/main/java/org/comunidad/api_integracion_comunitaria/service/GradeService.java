@@ -12,7 +12,6 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -20,7 +19,7 @@ import java.time.LocalDateTime;
  * <p>
  * Maneja la lógica para que Clientes y Proveedores se califiquen mutuamente,
  * asegurando que exista una relación laboral previa (Postulación Ganadora)
- * antes de permitir la calificación.
+ * vinculada a una petición específica antes de permitir la calificación.
  * </p>
  */
 @Service
@@ -34,17 +33,20 @@ public class GradeService {
         private final CustomerRepository customerRepository;
         private final PostulationRepository postulationRepository;
 
+        // DEPENDENCIA: Para buscar la petición que se está calificando
+        private final PetitionRepository petitionRepository;
+
         /**
          * Permite a un Cliente calificar a un Proveedor tras un trabajo completado.
          * <p>
          * Reglas de Negocio:
          * 1. El usuario autenticado debe tener perfil de Cliente.
-         * 2. Debe existir una postulación aceptada (Winner=true) entre ambos.
+         * 2. Debe existir una postulación aceptada (Winner=true) entre ambos para esa petición.
+         * 3. La petición debe pertenecer al cliente que califica.
+         * 4. No debe haberlo calificado previamente por ESTA petición.
          * </p>
          *
-         * @param request DTO con la puntuación (1-5), comentario e ID del proveedor.
-         * @throws RuntimeException Si no son el cliente, no existe el proveedor o no
-         * han trabajado juntos.
+         * @param request DTO con la puntuación (1-5), comentario, ID del proveedor y ID de la petición.
          */
         @Transactional
         public void rateProvider(RateRequest request) {
@@ -55,25 +57,33 @@ public class GradeService {
                 Provider provider = providerRepository.findById(request.getTargetId())
                         .orElseThrow(() -> new RuntimeException("Proveedor no encontrado."));
 
-                // VALIDACIÓN EXTRA: Verificar si ya lo calificó previamente para evitar duplicados
-                if (gradeProviderRepository.existsByCustomer_IdCustomerAndProvider_IdProvider(customer.getIdCustomer(), provider.getIdProvider())) {
-                        throw new RuntimeException("Ya has calificado a este proveedor anteriormente.");
+                Petition petition = petitionRepository.findById(request.getPetitionId())
+                        .orElseThrow(() -> new RuntimeException("Petición no encontrada."));
+
+                // 1. VALIDACIÓN EXTRA: Verificar si ya lo calificó para ESTE trabajo específico
+                if (gradeProviderRepository.existsByCustomer_IdCustomerAndProvider_IdProviderAndPetition_IdPetition(
+                        customer.getIdCustomer(), provider.getIdProvider(), petition.getIdPetition())) {
+                        throw new RuntimeException("Ya has calificado a este proveedor por este trabajo.");
                 }
 
-                // VALIDACIÓN DE SEGURIDAD: Verificar historial laboral
-                boolean hasWorkedTogether = postulationRepository
-                        .existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(
-                                customer.getIdCustomer(), provider.getIdProvider());
+                // 2. VALIDACIÓN DE SEGURIDAD: ¿La petición le pertenece a este cliente?
+                if (!petition.getCustomer().getIdCustomer().equals(customer.getIdCustomer())) {
+                        throw new RuntimeException("Esta petición no te pertenece.");
+                }
 
-                if (!hasWorkedTogether) {
-                        throw new RuntimeException(
-                                "No puedes calificar a este proveedor porque no has completado ningún trabajo adjudicado con él.");
+                // 3. VALIDACIÓN: ¿El proveedor ganó ESTA petición?
+                boolean isWinner = postulationRepository.existsByPetition_IdPetitionAndProvider_IdProviderAndWinnerTrue(
+                        petition.getIdPetition(), provider.getIdProvider());
+
+                if (!isWinner) {
+                        throw new RuntimeException("No puedes calificar a este proveedor porque no fue el adjudicado para esta petición.");
                 }
 
                 // Crear calificación
                 GradeProvider review = new GradeProvider();
                 review.setCustomer(customer);
                 review.setProvider(provider);
+                review.setPetition(petition); // ASIGNAMOS LA PETICIÓN
                 review.setRating(request.getRating());
                 review.setComment(request.getComment());
                 review.setIsVisible(true);
@@ -84,12 +94,6 @@ public class GradeService {
 
         /**
          * Permite a un Proveedor calificar a un Cliente.
-         * <p>
-         * Es la contraparte del método {@link #rateProvider}, asegurando reciprocidad
-         * en el sistema de reputación.
-         * </p>
-         *
-         * @param request DTO con la puntuación, comentario e ID del cliente.
          */
         @Transactional
         public void rateCustomer(RateRequest request) {
@@ -100,19 +104,27 @@ public class GradeService {
                 Customer customer = customerRepository.findById(request.getTargetId())
                         .orElseThrow(() -> new RuntimeException("Cliente no encontrado."));
 
-                // VALIDACIÓN: ¿Trabajaron juntos?
-                boolean hasWorkedTogether = postulationRepository
-                        .existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(
-                                customer.getIdCustomer(), provider.getIdProvider());
+                Petition petition = petitionRepository.findById(request.getPetitionId())
+                        .orElseThrow(() -> new RuntimeException("Petición no encontrada."));
 
-                if (!hasWorkedTogether) {
-                        throw new RuntimeException(
-                                "No puedes calificar a este cliente sin haberle realizado un trabajo adjudicado.");
+                // Validación anti-spam para este trabajo
+                if (gradeCustomerRepository.existsByProvider_IdProviderAndCustomer_IdCustomerAndPetition_IdPetition(
+                        provider.getIdProvider(), customer.getIdCustomer(), petition.getIdPetition())) {
+                        throw new RuntimeException("Ya has calificado a este cliente por este trabajo.");
+                }
+
+                // Verificamos si este proveedor realmente ganó esta petición
+                boolean isWinner = postulationRepository.existsByPetition_IdPetitionAndProvider_IdProviderAndWinnerTrue(
+                        petition.getIdPetition(), provider.getIdProvider());
+
+                if (!isWinner || !petition.getCustomer().getIdCustomer().equals(customer.getIdCustomer())) {
+                        throw new RuntimeException("No estás autorizado a calificar a este cliente en este trabajo.");
                 }
 
                 GradeCustomer review = new GradeCustomer();
                 review.setProvider(provider);
                 review.setCustomer(customer);
+                review.setPetition(petition); // ASIGNAMOS LA PETICIÓN
                 review.setRating(request.getRating());
                 review.setComment(request.getComment());
                 review.setIsVisible(true);
@@ -122,38 +134,29 @@ public class GradeService {
 
         /**
          * Obtiene el listado de reseñas de un proveedor de forma paginada.
-         * <p>
-         * Ideal para mostrar en el perfil público del proveedor sin sobrecargar la
-         * vista.
-         * </p>
-         *
-         * @param providerId ID del proveedor a consultar.
-         * @param pageable   Configuración de la página (tamaño, número de página).
-         * @return Una página (Page) de objetos {@link ReviewResponse}.
          */
-        @Transactional(readOnly = true) // <--- ESTA ES LA ANOTACIÓN QUE SOLUCIONA EL ERROR LAZYINITIALIZATION
+        @Transactional(readOnly = true)
         public Page<ReviewResponse> getProviderReviews(Integer providerId, Pageable pageable) {
                 return gradeProviderRepository.findByProvider_IdProvider(providerId, pageable)
                         .map(r -> ReviewResponse.builder()
                                 .idReview(r.getIdGradeProvider())
-                                // Solo mostramos el nombre de pila por privacidad básica
                                 .reviewerName(r.getCustomer().getUser().getName())
                                 .rating(r.getRating())
                                 .comment(r.getComment())
-                                // Formateamos la fecha si existe, o ponemos la actual como fallback
-                                .date(LocalDateTime.parse(r.getDateCreate() != null ? r.getDateCreate().toString() : LocalDate.now().toString()))
+                                // CORRECCIÓN AQUÍ: Uso directo del objeto LocalDateTime para evitar parseos inseguros
+                                .date(r.getDateCreate() != null ? r.getDateCreate() : LocalDateTime.now())
                                 .build());
         }
 
         /**
-         * Verifica si el cliente autenticado ya calificó a un proveedor específico.
+         * Verifica si el cliente autenticado ya calificó a un proveedor específico para una petición específica.
          */
         @Transactional(readOnly = true)
-        public boolean hasCustomerRatedProvider(Integer providerId) {
+        public boolean hasCustomerRatedProvider(Integer providerId, Integer petitionId) {
                 User user = getAuthenticatedUser();
                 return customerRepository.findByUser_IdUser(user.getIdUser())
-                        .map(customer -> gradeProviderRepository.existsByCustomer_IdCustomerAndProvider_IdProvider(
-                                customer.getIdCustomer(), providerId))
+                        .map(customer -> gradeProviderRepository.existsByCustomer_IdCustomerAndProvider_IdProviderAndPetition_IdPetition(
+                                customer.getIdCustomer(), providerId, petitionId))
                         .orElse(false);
         }
 

@@ -21,7 +21,7 @@ public interface PostulationRepository extends JpaRepository<Postulation, Intege
 
     Page<Postulation> findByProvider_IdProvider(Integer idProvider, Pageable pageable);
 
-    // --- EL MÉTODO QUE FALTABA ---
-    // Verifica si un proveedor ya ganó un trabajo con este cliente
-    boolean existsByPetition_Customer_IdCustomerAndProvider_IdProviderAndWinnerTrue(Integer idCustomer, Integer idProvider);
+    // --- NUEVO MÉTODO PARA CALIFICACIONES ---
+    // Verifica si un proveedor fue el ganador de UNA petición en particular
+    boolean existsByPetition_IdPetitionAndProvider_IdProviderAndWinnerTrue(Integer idPetition, Integer idProvider);
 }

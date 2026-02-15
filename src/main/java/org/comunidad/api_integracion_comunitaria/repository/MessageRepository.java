@@ -1,16 +1,21 @@
 package org.comunidad.api_integracion_comunitaria.repository;
 
 import org.comunidad.api_integracion_comunitaria.model.Message;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface MessageRepository extends JpaRepository<Message, Long> {
 
-    // Obtener historial de mensajes paginado.
-    // IMPORTANTE: El ordenamiento (DESC o ASC) vendrá definido en el Pageable desde
-    // el Controller.
-    Page<Message> findByConversation_IdConversation(Long conversationId, Pageable pageable);
+    // Para cargar la sala de chat
+    List<Message> findByConversation_IdConversationOrderByCreatedAtAsc(Long conversationId);
+
+    // Para la bandeja de entrada: obtener el último mensaje (el "preview")
+    Optional<Message> findTopByConversation_IdConversationOrderByCreatedAtDesc(Long conversationId);
+
+    // Para la bandeja de entrada: contar mensajes no leídos
+    Long countByConversation_IdConversationAndSender_IdUserNotAndIsReadFalse(Long conversationId, Integer myUserId);
 }

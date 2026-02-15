@@ -39,4 +39,8 @@ public class GradeProvider extends AuditableEntity {
 
     @Column(name = "is_visible")
     private Boolean isVisible;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_petition") // <-- NUEVA COLUMNA EN BASE DE DATOS
+    @ToString.Exclude
+    private Petition petition;
 }

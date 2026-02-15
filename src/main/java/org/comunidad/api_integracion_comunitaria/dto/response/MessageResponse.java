@@ -9,8 +9,8 @@ import java.time.LocalDateTime;
 public class MessageResponse {
     private Long idMessage;
     private String content;
-    private LocalDateTime createdAt;
+    private LocalDateTime sentAt; // Cambiado de createdAt a sentAt para el frontend
     private Integer senderId;
     private String senderName;
-    private Boolean isMine; // Para que el frontend sepa si ponerlo a la derecha (verde) o izquierda (gris)
+    private Boolean isMine;
 }

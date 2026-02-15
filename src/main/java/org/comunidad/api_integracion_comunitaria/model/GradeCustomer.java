@@ -25,6 +25,12 @@ public class GradeCustomer extends AuditableEntity {
     @ToString.Exclude
     private Provider provider;
 
+    // --- AQUÍ ESTÁ EL CAMPO QUE FALTABA ---
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_petition")
+    @ToString.Exclude
+    private Petition petition;
+
     private Integer rating;
     private String comment;
     private String response;
