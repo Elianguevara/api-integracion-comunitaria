@@ -25,21 +25,62 @@ public class ChatService {
     private final UserRepository userRepository;
     private final PetitionRepository petitionRepository;
     private final UserRoleRepository userRoleRepository;
+    private final ProviderRepository providerRepository;
+    private final PostulationRepository postulationRepository; // <-- NUEVO: Inyectamos postulaciones
 
     private User getAuthenticatedUser() {
         String email = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUsername();
         return userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
     }
 
+    // --- NUEVO: MÉTODO QUE VALIDA SI EL CHAT DEBE ESTAR ABIERTO ---
+    private boolean isConversationActive(Conversation c) {
+        Petition petition = c.getPetition();
+        String state = petition.getState().getName().toUpperCase();
+
+        // Si finalizó o se canceló, nadie puede hablar
+        if (state.equals("FINALIZADA") || state.equals("CANCELADA")) {
+            return false;
+        }
+
+        // Si está adjudicada, solo pueden hablar si el proveedor ganador está en este chat
+        if (state.equals("ADJUDICADA")) {
+            List<Postulation> postulations = postulationRepository.findByPetition_IdPetition(petition.getIdPetition());
+            Integer winnerUserId = null;
+
+            for (Postulation p : postulations) {
+                if (p.getWinner() != null && p.getWinner()) {
+                    winnerUserId = p.getProvider().getUser().getIdUser();
+                    break;
+                }
+            }
+
+            if (winnerUserId != null) {
+                // Si el usuario ganador pertenece a ESTA conversación, sigue activa
+                return participantRepository.existsByConversation_IdConversationAndUser_IdUser(c.getIdConversation(), winnerUserId);
+            }
+            return false;
+        }
+
+        // Si está PUBLICADA o EN_POSTULACIONES, todos pueden hablar
+        return true;
+    }
+
     @Transactional
-    public ConversationResponse createOrGetConversation(Integer petitionId, Integer targetUserId) {
+    public ConversationResponse createOrGetConversation(Integer petitionId, Integer providerId) {
         User currentUser = getAuthenticatedUser();
-        User targetUser = userRepository.findById(targetUserId)
-                .orElseThrow(() -> new RuntimeException("Usuario destino no encontrado"));
+
+        Provider provider = providerRepository.findById(providerId)
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado"));
+
+        User targetUser = provider.getUser();
+
         Petition petition = petitionRepository.findById(petitionId)
                 .orElseThrow(() -> new RuntimeException("Petición no encontrada"));
 
-        Conversation conversation = conversationRepository.findExistingConversation(petitionId, currentUser.getIdUser(), targetUserId)
+        Conversation conversation = conversationRepository.findExistingConversation(petitionId, currentUser.getIdUser(), targetUser.getIdUser())
+                .stream()
+                .findFirst()
                 .orElseGet(() -> {
                     Conversation newConv = new Conversation();
                     newConv.setPetition(petition);
@@ -72,6 +113,11 @@ public class ChatService {
 
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new RuntimeException("Conversación no encontrada"));
+
+        // --- NUEVO: BLOQUEAMOS EL ENVÍO DESDE EL BACKEND SI ESTÁ CERRADO ---
+        if (!isConversationActive(conversation)) {
+            throw new RuntimeException("Esta conversación ha sido cerrada. La solicitud finalizó o fue adjudicada a otro proveedor.");
+        }
 
         Message message = new Message();
         message.setConversation(conversation);
@@ -106,30 +152,37 @@ public class ChatService {
                 .collect(Collectors.toList());
     }
 
-    // --- Mappers ---
+    @Transactional
+    public void markMessagesAsRead(Long conversationId) {
+        User currentUser = getAuthenticatedUser();
+        if (!participantRepository.existsByConversation_IdConversationAndUser_IdUser(conversationId, currentUser.getIdUser())) {
+            throw new RuntimeException("Acceso denegado a esta conversación.");
+        }
+        List<Message> unreadMessages = messageRepository.findByConversation_IdConversationAndSender_IdUserNotAndIsReadFalse(
+                conversationId,
+                currentUser.getIdUser()
+        );
+        if (!unreadMessages.isEmpty()) {
+            unreadMessages.forEach(m -> m.setIsRead(true));
+            messageRepository.saveAll(unreadMessages);
+        }
+    }
+
     private ConversationResponse mapToConversationResponse(Conversation c, Integer myUserId) {
-        // 1. Buscar al otro participante
         User otherUser = participantRepository.findFirstByConversation_IdConversationAndUser_IdUserNot(c.getIdConversation(), myUserId)
                 .map(ConversationParticipant::getUser)
                 .orElse(null);
 
-        // 2. Buscar el rol del otro participante usando el método exacto de tu repositorio
         String roleName = "";
         if (otherUser != null) {
-            // AQUÍ ESTÁ EL CAMBIO: Usamos findByUser_IdUser pasándole el ID
             List<UserRole> roles = userRoleRepository.findByUser_IdUser(otherUser.getIdUser());
             if (roles != null && !roles.isEmpty()) {
                 roleName = roles.get(0).getRole().getName();
             }
         }
 
-        // 3. Obtener datos del último mensaje
         Optional<Message> lastMessageOpt = messageRepository.findTopByConversation_IdConversationOrderByCreatedAtDesc(c.getIdConversation());
-
-        // 4. Contar no leídos
         Long unreadCount = messageRepository.countByConversation_IdConversationAndSender_IdUserNotAndIsReadFalse(c.getIdConversation(), myUserId);
-
-        // 5. Calcular dinámicamente la última actividad
         LocalDateTime lastActivity = lastMessageOpt.map(Message::getCreatedAt).orElse(c.getCreatedAt());
 
         return ConversationResponse.builder()
@@ -143,6 +196,7 @@ public class ChatService {
                 .lastMessage(lastMessageOpt.map(Message::getContent).orElse(""))
                 .updatedAt(lastActivity)
                 .unreadCount(unreadCount)
+                .isReadOnly(!isConversationActive(c)) // <-- NUEVO: ENVIAMOS EL ESTADO AL FRONT
                 .build();
     }
 

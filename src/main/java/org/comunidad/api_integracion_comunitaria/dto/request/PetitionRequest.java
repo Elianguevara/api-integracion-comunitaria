@@ -20,10 +20,13 @@ public class PetitionRequest {
     @NotNull(message = "Debes seleccionar una profesión requerida")
     private Integer idProfession;
 
-    // --- NUEVO CAMPO ---
     @NotNull(message = "Debes seleccionar la ciudad donde se realizará el trabajo")
     private Integer idCity;
 
     @Future(message = "La fecha de cierre debe ser posterior a hoy")
     private LocalDate dateUntil;
+
+    // --- NUEVO CAMPO ---
+    // No usamos @NotNull para permitir que publiquen sin foto
+    private String imageUrl;
 }

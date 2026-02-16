@@ -17,4 +17,5 @@ public class ConversationResponse {
     private String lastMessage;
     private LocalDateTime updatedAt;
     private Long unreadCount;
+    private Boolean isReadOnly; // <-- NUEVO CAMPO
 }

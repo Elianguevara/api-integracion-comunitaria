@@ -18,4 +18,6 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     // Para la bandeja de entrada: contar mensajes no leídos
     Long countByConversation_IdConversationAndSender_IdUserNotAndIsReadFalse(Long conversationId, Integer myUserId);
+
+    List<Message> findByConversation_IdConversationAndSender_IdUserNotAndIsReadFalse(Long conversationId, Integer userId);
 }

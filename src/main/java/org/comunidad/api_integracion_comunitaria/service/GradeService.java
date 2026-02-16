@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Servicio encargado de la gestión de Calificaciones y Reseñas (Reviews).
@@ -158,6 +160,44 @@ public class GradeService {
                         .map(customer -> gradeProviderRepository.existsByCustomer_IdCustomerAndProvider_IdProviderAndPetition_IdPetition(
                                 customer.getIdCustomer(), providerId, petitionId))
                         .orElse(false);
+        }
+
+        /**
+         * Obtiene el estado de calificación para un proveedor respecto a un cliente en un trabajo específico.
+         */
+        @Transactional(readOnly = true)
+        public Map<String, Object> getCustomerRatingStatus(Integer petitionId) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("canRate", false);
+                result.put("hasRated", false);
+                result.put("customerId", null);
+                result.put("customerName", null);
+
+                User user = getAuthenticatedUser();
+                java.util.Optional<Provider> providerOpt = providerRepository.findByUser_IdUser(user.getIdUser());
+                if (providerOpt.isEmpty()) return result;
+
+                Provider provider = providerOpt.get();
+
+                Petition petition = petitionRepository.findById(petitionId).orElse(null);
+                // Solo se puede calificar si la petición está FINALIZADA
+                if (petition == null || !"FINALIZADA".equals(petition.getState().getName())) return result;
+
+                result.put("customerId", petition.getCustomer().getIdCustomer());
+                result.put("customerName", petition.getCustomer().getUser().getName() + " " + petition.getCustomer().getUser().getLastname());
+
+                // Verificar si este proveedor fue el ganador
+                boolean isWinner = postulationRepository.existsByPetition_IdPetitionAndProvider_IdProviderAndWinnerTrue(petitionId, provider.getIdProvider());
+                if (!isWinner) return result;
+
+                // Verificar si ya calificó
+                boolean hasRated = gradeCustomerRepository.existsByProvider_IdProviderAndCustomer_IdCustomerAndPetition_IdPetition(
+                        provider.getIdProvider(), petition.getCustomer().getIdCustomer(), petitionId);
+
+                result.put("hasRated", hasRated);
+                result.put("canRate", !hasRated);
+
+                return result;
         }
 
         /**

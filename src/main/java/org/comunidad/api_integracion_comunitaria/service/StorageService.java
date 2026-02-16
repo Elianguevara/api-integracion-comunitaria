@@ -1,40 +1,19 @@
 package org.comunidad.api_integracion_comunitaria.service;
 
-import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.UUID;
+import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 public class StorageService {
 
-    // Carpeta donde se guardarán las imágenes
-    @Value("${storage.location}")
-    private String storageLocation;
-
-    private Path rootLocation;
-
-    @PostConstruct
-    public void init() {
-        // Al iniciar la app, crea la carpeta si no existe
-        try {
-            this.rootLocation = Paths.get(storageLocation);
-            Files.createDirectories(this.rootLocation);
-        } catch (IOException e) {
-            throw new RuntimeException("No se pudo inicializar la carpeta de almacenamiento", e);
-        }
-    }
+    private final Cloudinary cloudinary;
 
     public String store(MultipartFile file) {
         try {
@@ -42,34 +21,18 @@ public class StorageService {
                 throw new RuntimeException("Error: Archivo vacío.");
             }
 
-            // Generar nombre único: "foto.jpg" -> "uuid-foto.jpg"
-            String filename = UUID.randomUUID().toString() + "-" + file.getOriginalFilename();
+            // Subimos el archivo a Cloudinary
+            // ObjectUtils.emptyMap() envía las opciones por defecto
+            Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.emptyMap());
 
-            // Copiar archivo al destino
-            Path destinationFile = this.rootLocation.resolve(Paths.get(filename))
-                    .normalize().toAbsolutePath();
+            // Cloudinary nos devuelve mucha info, pero solo nos interesa la URL segura
+            return uploadResult.get("secure_url").toString();
 
-            try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(inputStream, destinationFile, StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            return filename; // Devolvemos el nombre para guardarlo en la BD
         } catch (IOException e) {
-            throw new RuntimeException("Fallo al guardar archivo.", e);
+            throw new RuntimeException("Fallo al subir archivo a Cloudinary.", e);
         }
     }
 
-    public Resource loadAsResource(String filename) {
-        try {
-            Path file = rootLocation.resolve(filename);
-            Resource resource = new UrlResource(file.toUri());
-            if (resource.exists() || resource.isReadable()) {
-                return resource;
-            } else {
-                throw new RuntimeException("No se puede leer el archivo: " + filename);
-            }
-        } catch (MalformedURLException e) {
-            throw new RuntimeException("Error leyendo archivo: " + filename, e);
-        }
-    }
+    // Nota: Eliminamos los métodos init() y loadAsResource() porque
+    // ya no guardaremos ni leeremos archivos del disco local del servidor.
 }

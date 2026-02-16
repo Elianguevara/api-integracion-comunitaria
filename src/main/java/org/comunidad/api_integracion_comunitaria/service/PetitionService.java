@@ -12,7 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.Objects;
+import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Servicio encargado de la gestión del ciclo de vida de las Peticiones (Trabajos solicitados).
@@ -31,6 +32,9 @@ public class PetitionService {
         private final PetitionStateRepository petitionStateRepository;
         private final NotificationService notificationService;
         private final CityRepository cityRepository;
+
+        // --- NUEVO: Repositorio para guardar y buscar las fotos adjuntas ---
+        private final PetitionAttachmentRepository petitionAttachmentRepository;
 
         /**
          * Crea una nueva petición de servicio en el sistema.
@@ -67,7 +71,21 @@ public class PetitionService {
                 petition.setState(petitionStateRepository.findByName("PUBLICADA")
                         .orElseThrow(() -> new RuntimeException("Estado 'PUBLICADA' no configurado en BD.")));
 
+                // 1. Guardamos la petición principal primero
                 Petition savedPetition = petitionRepository.save(petition);
+
+                // --- NUEVO: Guardamos la imagen si el frontend la envió ---
+                if (request.getImageUrl() != null && !request.getImageUrl().trim().isEmpty()) {
+                        PetitionAttachment attachment = new PetitionAttachment();
+                        attachment.setPetition(savedPetition);
+                        attachment.setUrl(request.getImageUrl());
+
+                        // Datos de auditoría obligatorios según tu modelo
+                        attachment.setUserCreate(user);
+                        attachment.setDateCreate(LocalDateTime.now());
+
+                        petitionAttachmentRepository.save(attachment);
+                }
 
                 try {
                         notificationService.notifyProvidersByProfessionAndCity(
@@ -151,20 +169,11 @@ public class PetitionService {
 
         /**
          * Reactiva una solicitud cancelada devolviéndola al estado 'PUBLICADA'.
-         * <p>
-         * Se valida que la fecha límite (dateUntil) no haya expirado antes de reactivar.
-         * </p>
-         *
-         * @param id        ID de la petición.
-         * @param userEmail Email del propietario.
-         * @return {@link PetitionResponse} con el estado 'PUBLICADA'.
-         * @throws RuntimeException Si la fecha de cierre ya pasó.
          */
         @Transactional
         public PetitionResponse reactivatePetition(Long id, String userEmail) {
                 Petition petition = findAndValidateOwnership(id, userEmail);
 
-                // --- VALIDACIÓN DE FECHA ---
                 if (petition.getDateUntil() != null && petition.getDateUntil().isBefore(LocalDate.now())) {
                         throw new RuntimeException("No se puede reactivar una solicitud con fecha de cierre vencida. Por favor, edita la fecha primero.");
                 }
@@ -198,7 +207,8 @@ public class PetitionService {
         private PetitionResponse mapToResponse(Petition petition) {
                 String cityName = (petition.getCity() != null) ? petition.getCity().getName() : "Ubicación no especificada";
 
-                return PetitionResponse.builder()
+                // --- NUEVO: Construimos el Response usando el Builder y verificamos si hay fotos ---
+                PetitionResponse.PetitionResponseBuilder responseBuilder = PetitionResponse.builder()
                         .idPetition(petition.getIdPetition())
                         .description(petition.getDescription())
                         .typePetitionName(petition.getTypePetition() != null ? petition.getTypePetition().getTypePetitionName() : "Sin categoría")
@@ -207,7 +217,16 @@ public class PetitionService {
                         .dateSince(petition.getDateSince())
                         .dateUntil(petition.getDateUntil())
                         .customerName(petition.getCustomer().getUser().getName() + " " + petition.getCustomer().getUser().getLastname())
-                        .cityName(cityName)
-                        .build();
+                        .cityName(cityName);
+
+                // Buscamos si tiene imágenes adjuntas en la base de datos
+                List<PetitionAttachment> attachments = petitionAttachmentRepository.findByPetition_IdPetition(petition.getIdPetition());
+
+                // Si hay fotos, sacamos la primera (en un futuro podrías enviar una lista si lo cambias a List<String>)
+                if (!attachments.isEmpty()) {
+                        responseBuilder.imageUrl(attachments.get(0).getUrl());
+                }
+
+                return responseBuilder.build();
         }
 }

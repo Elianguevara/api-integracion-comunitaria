@@ -7,7 +7,6 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface ConversationRepository extends JpaRepository<Conversation, Long> {
@@ -20,7 +19,7 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
             "JOIN ConversationParticipant cp2 ON c.idConversation = cp2.conversation.idConversation " +
             "WHERE c.petition.idPetition = :petitionId " +
             "AND cp1.user.idUser = :userId1 AND cp2.user.idUser = :userId2")
-    Optional<Conversation> findExistingConversation(@Param("petitionId") Integer petitionId,
-                                                    @Param("userId1") Integer userId1,
-                                                    @Param("userId2") Integer userId2);
+    List<Conversation> findExistingConversation(@Param("petitionId") Integer petitionId,
+                                                @Param("userId1") Integer userId1,
+                                                @Param("userId2") Integer userId2);
 }

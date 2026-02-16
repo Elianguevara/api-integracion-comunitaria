@@ -12,6 +12,8 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 /**
  * Controlador REST para gestionar las calificaciones.
  * Expone endpoints para crear reviews y consultar perfiles de reputación.
@@ -78,5 +80,13 @@ public class GradeController {
             @PathVariable Integer providerId,
             @RequestParam Integer petitionId) {
         return ResponseEntity.ok(gradeService.hasCustomerRatedProvider(providerId, petitionId));
+    }
+
+    /**
+     * Devuelve el estado de calificación del proveedor hacia el cliente para una petición específica.
+     */
+    @GetMapping("/customer-rating-status/{petitionId}")
+    public ResponseEntity<Map<String, Object>> getCustomerRatingStatus(@PathVariable Integer petitionId) {
+        return ResponseEntity.ok(gradeService.getCustomerRatingStatus(petitionId));
     }
 }

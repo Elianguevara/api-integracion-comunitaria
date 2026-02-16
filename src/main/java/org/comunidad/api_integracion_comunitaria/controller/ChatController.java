@@ -44,4 +44,11 @@ public class ChatController {
             @Valid @RequestBody MessageRequest request) {
         return ResponseEntity.ok(chatService.sendMessage(conversationId, request.getContent()));
     }
+
+    // 5. Marcar mensajes de una conversación como leídos
+    @PutMapping("/{conversationId}/read")
+    public ResponseEntity<Void> markAsRead(@PathVariable Long conversationId) {
+        chatService.markMessagesAsRead(conversationId);
+        return ResponseEntity.ok().build();
+    }
 }

@@ -49,4 +49,10 @@ public class PetitionResponse {
      * </p>
      */
     private String cityName;
+
+    // --- NUEVO CAMPO AGREGADO ---
+    /** * URL de la foto adjunta del problema (proveniente de Cloudinary).
+     * Puede ser nulo si el cliente no subió ninguna imagen.
+     */
+    private String imageUrl;
 }
